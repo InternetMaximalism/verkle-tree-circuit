@@ -8,7 +8,7 @@ use franklin_crypto::bellman::groth16::{
 use franklin_crypto::bellman::pairing::bn256::Bn256;
 
 use crate::api::input::{decode_public_wires, CircuitInput};
-use crate::circuit::SampleCircuit;
+use crate::circuit::sample::SampleCircuit;
 
 pub fn run(circuit_input: CircuitInput) -> Result<()> {
   // setup

@@ -44,19 +44,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
-name = "bellman-sample"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "franklin-crypto",
- "hex 0.4.3",
- "rand",
- "serde",
- "serde_json",
- "structopt",
-]
-
-[[package]]
 name = "bellman_ce"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -761,6 +748,20 @@ name = "vec_map"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
+
+[[package]]
+name = "verkle-circuit"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "franklin-crypto",
+ "hex 0.4.3",
+ "rand",
+ "serde",
+ "serde_json",
+ "structopt",
+]
 
 [[package]]
 name = "version_check"

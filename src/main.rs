@@ -1,10 +1,10 @@
-use bellman_sample::command::invoke_command;
+use verkle_circuit::command::invoke_command;
 
 #[test]
 fn test() {
   use std::path::Path;
 
-  use bellman_sample::api::{
+  use verkle_circuit::api::{
     prove::create_random_proof_with_file, setup::generate_random_parameters_with_file,
     verify::verify_proof_with_file,
   };

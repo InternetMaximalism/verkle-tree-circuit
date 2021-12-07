@@ -8,7 +8,7 @@ use franklin_crypto::bellman::groth16::{create_random_proof, Parameters};
 use franklin_crypto::bellman::pairing::bn256::Bn256;
 
 use crate::api::input::CircuitInput;
-use crate::circuit::SampleCircuit;
+use crate::circuit::sample::SampleCircuit;
 
 pub fn create_random_proof_with_file(
   pk_path: &Path,
