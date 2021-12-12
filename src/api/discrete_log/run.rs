@@ -5,12 +5,15 @@ use franklin_crypto::bellman::SynthesisError;
 use franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
 use franklin_crypto::bellman::pairing::bn256::Bn256;
 use franklin_crypto::bellman::pairing::Engine;
+use franklin_crypto::bellman::plonk::better_better_cs::cs::{Circuit, SetupAssembly, Width4MainGateWithDNext, Assembly, SynthesisModeProve};
+use franklin_crypto::bellman::plonk::better_better_cs::setup::VerificationKey;
+use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
+use franklin_crypto::bellman::plonk::commitments::transcript::keccak_transcript::RollingKeccakTranscript;
 use franklin_crypto::bellman::pairing::ff::ScalarEngine;
+use franklin_crypto::bellman::worker::Worker;
 use franklin_crypto::plonk::circuit::bigint::field::RnsParameters;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::without_flag_unchecked::WrapperUnchecked;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::{BN256AuxData, AuxData};
-use franklin_crypto::bellman::plonk::better_better_cs::cs::{Circuit, SetupAssembly, Width4MainGateWithDNext, Assembly, SynthesisModeProve};
-use franklin_crypto::bellman::plonk::better_better_cs::setup::VerificationKey;
 use franklin_crypto::plonk::circuit::Width4WithCustomGates;
 
 use crate::circuit::discrete_log::DiscreteLogCircuit;
@@ -33,7 +36,6 @@ pub fn run<'a>(circuit_input: CircuitInput) -> anyhow::Result<()> {
 
   dummy_circuit.synthesize(&mut assembly)?;
 
-  use franklin_crypto::bellman::worker::*;
   let worker = Worker::new();
 
   assembly.finalize();
@@ -56,8 +58,6 @@ pub fn run<'a>(circuit_input: CircuitInput) -> anyhow::Result<()> {
     _m: PhantomData,
   };
 
-  use franklin_crypto::bellman::plonk::commitments::transcript::keccak_transcript::RollingKeccakTranscript;
-
   let mut assembly =
     Assembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext, SynthesisModeProve>::new();
   circuit.synthesize(&mut assembly).expect("must synthesize");
@@ -70,13 +70,11 @@ pub fn run<'a>(circuit_input: CircuitInput) -> anyhow::Result<()> {
     .expect("must check if satisfied and make a proof");
 
   // verify
-  use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
-
   let is_valid =
     verify::<_, _, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(&vk, &proof, None)?;
 
   if is_valid == false {
-    println!("Recursive circuit proof is invalid");
+    println!("Proof is invalid");
     return Err(SynthesisError::Unsatisfiable.into());
   }
 
