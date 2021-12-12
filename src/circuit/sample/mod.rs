@@ -46,7 +46,7 @@ impl<E: Engine> Circuit<E> for SampleCircuit<E> {
 }
 
 impl<E: Engine> SampleCircuit<E> {
-  pub fn get_public_wires(&self) -> anyhow::Result<Vec<u8>> {
+  pub fn get_public_wires(&self) -> anyhow::Result<Vec<E::Fr>> {
     let inputs = self.inputs;
     let output: E::Fr = if inputs[0].unwrap() && inputs[1].unwrap() {
       E::Fr::one()
@@ -54,9 +54,6 @@ impl<E: Engine> SampleCircuit<E> {
       E::Fr::zero()
     };
 
-    let mut public_wires = hex::decode(output.to_string()[5..69].to_string())?;
-    public_wires.reverse();
-
-    Ok(public_wires)
+    Ok(vec![output])
   }
 }

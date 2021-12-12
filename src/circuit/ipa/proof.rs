@@ -1,7 +1,7 @@
 use franklin_crypto::bellman::pairing::ff::Field;
 use franklin_crypto::bellman::pairing::CurveProjective;
 
-use crate::circuit::transcript::Transcript;
+use super::transcript::Transcript;
 
 pub struct IpaProof<G: CurveProjective> {
   pub l: Vec<G>,

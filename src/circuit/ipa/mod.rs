@@ -1,3 +1,8 @@
+pub mod config;
+pub mod proof;
+pub mod transcript;
+pub mod utils;
+
 use std::io::{Error, ErrorKind};
 
 use franklin_crypto::bellman::pairing::ff::Field;
@@ -6,10 +11,10 @@ use franklin_crypto::bellman::{Circuit, ConstraintSystem, SynthesisError};
 // use franklin_crypto::circuit::boolean::{AllocatedBit, Boolean};
 // use franklin_crypto::circuit::num::AllocatedNum;
 
-use crate::circuit::config::IpaConfig;
-use crate::circuit::proof::IpaProof;
-use crate::circuit::transcript::Transcript;
-use crate::circuit::utils::{commit, fold_points, fold_scalars};
+use self::config::IpaConfig;
+use self::proof::IpaProof;
+use self::transcript::Transcript;
+use self::utils::{commit, fold_points, fold_scalars};
 
 pub struct IpaCircuit<E: Engine> {
   pub transcript: Transcript,
@@ -22,7 +27,7 @@ pub struct IpaCircuit<E: Engine> {
 
 impl<E: Engine> Circuit<E> for IpaCircuit<E> {
   fn synthesize<CS: ConstraintSystem<E>>(self, _cs: &mut CS) -> Result<(), SynthesisError> {
-    let mut transcript = self.transcript;
+    let mut transcript = self.transcript; // TODO: should mutate self.transcript
     transcript.domain_sep("ipa");
 
     let proof = self.proof.unwrap();

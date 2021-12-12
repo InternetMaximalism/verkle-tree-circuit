@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use structopt::StructOpt;
 
-use crate::api::{
+use crate::api::sample::{
   prove::create_random_proof_with_file, setup::generate_random_parameters_with_file,
   verify::verify_proof_with_file,
 };

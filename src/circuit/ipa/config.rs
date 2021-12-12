@@ -1,7 +1,7 @@
 use franklin_crypto::bellman::pairing::ff::PrimeField;
 use franklin_crypto::bellman::pairing::CurveProjective;
 
-use crate::circuit::utils::from_bytes_le;
+use super::utils::from_bytes_le;
 
 pub struct PrecomputedWeights<F: PrimeField> {
   // This stores A'(x_i) and 1/A'(x_i)

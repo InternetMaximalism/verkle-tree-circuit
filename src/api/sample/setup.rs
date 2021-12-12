@@ -2,14 +2,14 @@ use std::fs::{write, OpenOptions};
 use std::marker::PhantomData;
 use std::path::Path;
 
-use anyhow::Result;
 use franklin_crypto::bellman::groth16::generate_random_parameters;
 use franklin_crypto::bellman::pairing::bn256::Bn256;
 
-use crate::api::input::CircuitInput;
 use crate::circuit::sample::SampleCircuit;
 
-pub fn generate_random_parameters_with_file(pk_path: &Path, vk_path: &Path) -> Result<()> {
+use super::input::CircuitInput;
+
+pub fn generate_random_parameters_with_file(pk_path: &Path, vk_path: &Path) -> anyhow::Result<()> {
   let dummy_input = CircuitInput::default();
   let circuit = SampleCircuit {
     inputs: dummy_input.inputs,

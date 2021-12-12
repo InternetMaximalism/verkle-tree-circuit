@@ -3,7 +3,7 @@ use std::hash::Hasher;
 use franklin_crypto::bellman::pairing::ff::PrimeField;
 use franklin_crypto::bellman::pairing::CurveAffine;
 
-use crate::circuit::utils::{from_bytes_le, to_bytes_le};
+use super::utils::{from_bytes_le, to_bytes_le};
 
 pub struct Transcript {
   state: Box<dyn Hasher>,

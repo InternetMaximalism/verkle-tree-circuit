@@ -24,6 +24,7 @@
     "polyn",
     "repr",
     "serde",
+    "structopt",
     "vals",
     "verkle"
   ],
