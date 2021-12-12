@@ -39,7 +39,7 @@ pub fn run<'a>(circuit_input: CircuitInput) -> anyhow::Result<()> {
   assembly.finalize();
   let setup = assembly.create_setup(&worker)?;
 
-  let crs = Crs::<Bn256, CrsForMonomialForm>::crs_42(32, &worker);
+  let crs = Crs::<Bn256, CrsForMonomialForm>::crs_42(524288, &worker); // ?
 
   let vk = VerificationKey::<
     Bn256,
