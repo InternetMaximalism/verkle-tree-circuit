@@ -1077,6 +1077,7 @@ dependencies = [
  "bytes",
  "franklin-crypto",
  "hex",
+ "num-bigint 0.3.3",
  "rand 0.4.6",
  "serde",
  "serde_json",

@@ -36,7 +36,7 @@ fn test_setup_prove_verify_sample_circuit() -> Result<(), Box<dyn std::error::Er
 fn test_discrete_log_circuit() -> Result<(), Box<dyn std::error::Error>> {
   use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr, FrRepr};
   use franklin_crypto::bellman::pairing::ff::PrimeField;
-  use franklin_crypto::bellman::{CurveAffine, Engine};
+  use franklin_crypto::bellman::pairing::{CurveAffine, Engine};
   use verkle_circuit::api::discrete_log::input::CircuitInput;
   use verkle_circuit::api::discrete_log::run::run;
 

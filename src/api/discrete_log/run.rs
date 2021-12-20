@@ -43,14 +43,14 @@ pub fn run<'a>(circuit_input: CircuitInput) -> anyhow::Result<()> {
 
   let crs = Crs::<Bn256, CrsForMonomialForm>::crs_42(524288, &worker); // ?
 
-  let vk = VerificationKey::<
-    Bn256,
-    DiscreteLogCircuit<Bn256, WrapperUnchecked<Bn256>, BN256AuxData>,
-  >::from_setup(&setup, &worker, &crs)?;
+  let vk =
+    VerificationKey::<Bn256, DiscreteLogCircuit<_, WrapperUnchecked<_>, BN256AuxData>>::from_setup(
+      &setup, &worker, &crs,
+    )?;
 
   // prove
   let aux_data = BN256AuxData::new();
-  let circuit = DiscreteLogCircuit::<Bn256, WrapperUnchecked<Bn256>, BN256AuxData> {
+  let circuit = DiscreteLogCircuit::<Bn256, WrapperUnchecked<_>, BN256AuxData> {
     base_point: circuit_input.base_point,
     coefficient: circuit_input.coefficient,
     rns_params: &rns_params,
