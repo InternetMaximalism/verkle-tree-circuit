@@ -84,7 +84,7 @@ impl<'a, E: Engine, T: ChannelGadget<E>, WP: WrappedAffinePoint<'a, E>, AD: AuxD
       &self.aux_data,
     )?;
 
-    let bit_limit = Some(256usize);
+    let bit_limit = None; // Some(256usize);
     let mut b =
       compute_barycentric_coefficients::<E, CS>(cs, &self.ic.precomputed_weights, eval_point)?;
 
@@ -129,6 +129,7 @@ impl<'a, E: Engine, T: ChannelGadget<E>, WP: WrappedAffinePoint<'a, E>, AD: AuxD
 
     // Compute expected commitment
     for (i, &x) in challenges.iter().enumerate() {
+      println!("challenges_inv: {}/{}", i, challenges.len());
       let l = WP::alloc(
         cs,
         self.proof.l[i].map(|l| l.into_affine()),
@@ -156,6 +157,8 @@ impl<'a, E: Engine, T: ChannelGadget<E>, WP: WrappedAffinePoint<'a, E>, AD: AuxD
       )?;
     }
 
+    println!("challenges_inv: {}/{}", challenges.len(), challenges.len());
+
     let mut current_basis = self
       .ic
       .srs
@@ -163,7 +166,11 @@ impl<'a, E: Engine, T: ChannelGadget<E>, WP: WrappedAffinePoint<'a, E>, AD: AuxD
       .map(|v| WP::alloc(cs, Some(v.into_affine()), &self.rns_params, &self.aux_data))
       .collect::<Result<Vec<_>, SynthesisError>>()?;
 
-    for x_inv in challenges_inv {
+    println!("reduction starts");
+    let start = std::time::Instant::now();
+
+    for (i, x_inv) in challenges_inv.iter().enumerate() {
+      println!("x_inv: {}/{}", i, challenges_inv.len());
       assert_eq!(
         current_basis.len() % 2,
         0,
@@ -189,6 +196,8 @@ impl<'a, E: Engine, T: ChannelGadget<E>, WP: WrappedAffinePoint<'a, E>, AD: AuxD
       )?;
     }
 
+    println!("x_inv: {}/{}", challenges_inv.len(), challenges_inv.len());
+
     if b.len() != 1 {
       return Err(
         Error::new(
@@ -199,21 +208,34 @@ impl<'a, E: Engine, T: ChannelGadget<E>, WP: WrappedAffinePoint<'a, E>, AD: AuxD
       );
     }
 
-    // C is equal to G[0] * a + (a * b[0]) * Q;
+    println!(
+      "reduction ends: {} s",
+      start.elapsed().as_millis() as f64 / 1000.0
+    );
+
+    println!("verification check starts");
+    let start = std::time::Instant::now();
+
+    // Compute `result = G[0] * a + (a * b[0]) * Q`.
     let proof_a = AllocatedNum::alloc(cs, || Ok(self.proof.a.unwrap()))?;
-    let mut result = current_basis[0].clone();
-    result = result.mul::<CS, AD>(cs, &proof_a, bit_limit, &self.rns_params, &self.aux_data)?;
+    let mut result1 = current_basis[0].clone(); // result1 = G[0]
+    let mut part_2a = b[0]; // part_2a = b[0]
 
-    let mut part_2a = b[0];
+    result1 = result1.mul::<CS, AD>(cs, &proof_a, bit_limit, &self.rns_params, &self.aux_data)?; // result1 *= proof_a
 
-    part_2a = part_2a.mul::<CS>(cs, &proof_a)?;
-    q = q.mul::<CS, AD>(cs, &part_2a, bit_limit, &self.rns_params, &self.aux_data)?;
+    part_2a = part_2a.mul::<CS>(cs, &proof_a)?; // part_2a *= proof_a
+    let mut result2 = q.mul::<CS, AD>(cs, &part_2a, bit_limit, &self.rns_params, &self.aux_data)?; // q *= part_2a
 
-    result = result.add::<CS>(cs, &mut q.clone(), &self.rns_params)?;
+    let result = result1.add::<CS>(cs, &mut result2, &self.rns_params)?; // result = result1 + result2
 
-    // result == commitment
+    // Ensure `commitment` is equal to `result`.
     let is_ok = result.equals::<CS>(cs, &commitment, &self.rns_params)?;
     Boolean::enforce_equal(cs, &is_ok, &Boolean::constant(true))?;
+
+    println!(
+      "verification check ends: {} s",
+      start.elapsed().as_millis() as f64 / 1000.0
+    );
 
     Ok(())
   }

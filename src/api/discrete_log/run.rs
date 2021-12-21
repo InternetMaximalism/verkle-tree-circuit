@@ -1,82 +1,94 @@
+// use std::fs::OpenOptions;
 use std::marker::PhantomData;
 use std::path::Path;
 
-use franklin_crypto::bellman::SynthesisError;
-use franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
-use franklin_crypto::bellman::pairing::bn256::Bn256;
-use franklin_crypto::bellman::pairing::Engine;
-use franklin_crypto::bellman::plonk::better_better_cs::cs::{Circuit, SetupAssembly, Width4MainGateWithDNext, Assembly, SynthesisModeProve};
-use franklin_crypto::bellman::plonk::better_better_cs::setup::VerificationKey;
-use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
-use franklin_crypto::bellman::plonk::commitments::transcript::keccak_transcript::RollingKeccakTranscript;
-use franklin_crypto::bellman::pairing::ff::ScalarEngine;
-use franklin_crypto::bellman::worker::Worker;
-use franklin_crypto::plonk::circuit::bigint::field::RnsParameters;
-use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::without_flag_unchecked::WrapperUnchecked;
-use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::{BN256AuxData, AuxData};
-use franklin_crypto::plonk::circuit::Width4WithCustomGates;
+use franklin_crypto::alt_babyjubjub::AltJubjubBn256;
+use franklin_crypto::bellman::groth16::{
+  create_random_proof, generate_random_parameters, prepare_verifying_key, verify_proof,
+};
+use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr};
+use franklin_crypto::bellman::Field;
+use franklin_crypto::jubjub::JubjubParams;
+use rand;
 
 use crate::circuit::discrete_log::DiscreteLogCircuit;
 
 use super::input::CircuitInput;
 
-pub fn run<'a>(circuit_input: CircuitInput) -> anyhow::Result<()> {
+pub fn run(circuit_input: CircuitInput) -> anyhow::Result<()> {
   // setup
-  let mut assembly = SetupAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
-  let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
-  let dummy_aux_data = BN256AuxData::new();
+  println!("setup");
+  let dummy_jubjub_params = AltJubjubBn256::new();
   let dummy_input = CircuitInput::default();
-  let dummy_circuit = DiscreteLogCircuit::<Bn256, WrapperUnchecked<Bn256>, BN256AuxData> {
-    base_point: dummy_input.base_point,
+  let dummy_circuit = DiscreteLogCircuit::<Bn256> {
+    base_point_x: dummy_input.base_point_x,
+    base_point_y: dummy_input.base_point_y,
     coefficient: dummy_input.coefficient,
-    rns_params: &rns_params,
-    aux_data: dummy_aux_data,
+    jubjub_params: dummy_jubjub_params,
     _m: PhantomData,
   };
 
-  dummy_circuit.synthesize(&mut assembly)?;
+  println!("create_setup");
+  let rng = &mut rand::thread_rng();
+  let setup = generate_random_parameters::<Bn256, _, _>(dummy_circuit, rng)?;
 
-  let worker = Worker::new();
-
-  assembly.finalize();
-  let setup = assembly.create_setup(&worker)?;
-
-  let crs = Crs::<Bn256, CrsForMonomialForm>::crs_42(524288, &worker); // ?
-
-  let vk =
-    VerificationKey::<Bn256, DiscreteLogCircuit<_, WrapperUnchecked<_>, BN256AuxData>>::from_setup(
-      &setup, &worker, &crs,
-    )?;
+  // let vk = setup.vk;
 
   // prove
-  let aux_data = BN256AuxData::new();
-  let circuit = DiscreteLogCircuit::<Bn256, WrapperUnchecked<_>, BN256AuxData> {
-    base_point: circuit_input.base_point,
+  println!("prove");
+  let jubjub_params = AltJubjubBn256::new();
+  let circuit = DiscreteLogCircuit::<Bn256> {
+    base_point_x: circuit_input.base_point_x,
+    base_point_y: circuit_input.base_point_y,
     coefficient: circuit_input.coefficient,
-    rns_params: &rns_params,
-    aux_data,
+    jubjub_params,
     _m: PhantomData,
   };
 
-  let mut assembly =
-    Assembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext, SynthesisModeProve>::new();
-  circuit.synthesize(&mut assembly).expect("must synthesize");
-  assembly.finalize();
-
-  let proof = assembly
-    .create_proof::<_, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(
-      &worker, &setup, &crs, None,
-    )
-    .expect("must check if satisfied and make a proof");
+  println!("create_proof");
+  let proof = create_random_proof(circuit, &setup, rng)?;
 
   // verify
-  let is_valid =
-    verify::<_, _, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(&vk, &proof, None)?;
+  println!("verify");
 
-  if is_valid == false {
-    println!("Proof is invalid");
-    return Err(SynthesisError::Unsatisfiable.into());
+  let jubjub_params = AltJubjubBn256::new();
+  let mut output_x = circuit_input.base_point_x.unwrap();
+  let mut output_y = circuit_input.base_point_y.unwrap();
+  let d = jubjub_params.edwards_d();
+  let a = jubjub_params.montgomery_a();
+  println!("d: {:?}", d);
+  println!("a: {:?}", a);
+  for b in [false, true] {
+    if b {
+      let tmp_x = output_x;
+      let tmp_y = output_y;
+      let mut x2 = tmp_x;
+      x2.mul_assign(&tmp_x);
+      let mut y2 = tmp_y;
+      y2.mul_assign(&tmp_y);
+      let mut ax2_sub_y2 = x2;
+      ax2_sub_y2.mul_assign(a);
+      ax2_sub_y2.sub_assign(&y2);
+      let mut double_xy = tmp_x;
+      double_xy.mul_assign(&tmp_y);
+      double_xy.double();
+      let mut dx2y2 = x2;
+      dx2y2.mul_assign(&y2);
+      dx2y2.mul_assign(d);
+      output_x = dx2y2;
+      output_x.add_assign(&Fr::one());
+      output_x.inverse();
+      output_x.mul_assign(&double_xy);
+      output_y = dx2y2;
+      output_y.sub_assign(&Fr::one());
+      output_y.inverse();
+      output_y.mul_assign(&ax2_sub_y2);
+    }
   }
+  let public_input = vec![output_x, output_y];
+  println!("public_input: {:?}", public_input);
+  let prepared_vk = prepare_verifying_key(&setup.vk);
+  verify_proof(&prepared_vk, &proof, &public_input)?;
 
   Ok(())
 }

@@ -1,3 +1,4 @@
+use std::fs::OpenOptions;
 use std::marker::PhantomData;
 use std::path::Path;
 
@@ -22,20 +23,16 @@ use franklin_crypto::plonk::circuit::verifier_circuit::channel::RescueChannelGad
 use franklin_crypto::plonk::circuit::Width4WithCustomGates;
 use franklin_crypto::rescue::bn256::Bn256RescueParams;
 
-use crate::circuit::ipa::config::{IpaConfig, PrecomputedWeights};
+use crate::circuit::ipa::config::{IpaConfig, PrecomputedWeights, DOMAIN_SIZE, NUM_IPA_ROUND};
 use crate::circuit::ipa::proof::OptionIpaProof;
 use crate::circuit::ipa::IpaCircuit;
 
 use super::input::CircuitInput;
 
-const NUM_IPA_ROUND: usize = 8; // log_2(common.POLY_DEGREE);
-const DOMAIN_SIZE: usize = 256; // common.POLY_DEGREE;
-
-pub fn run(circuit_input: CircuitInput) -> anyhow::Result<()> {
+pub fn run(crs_path: &Path, circuit_input: CircuitInput) -> anyhow::Result<()> {
   let num_ipa_rounds = NUM_IPA_ROUND; // log_2(DOMAIN_SIZE)
 
   // setup
-  let mut assembly = SetupAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
   let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
   let dummy_aux_data = BN256AuxData::new();
   let mut srs = vec![];
@@ -67,14 +64,16 @@ pub fn run(circuit_input: CircuitInput) -> anyhow::Result<()> {
       _m: PhantomData,
     };
 
+  let mut assembly = SetupAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
   dummy_circuit.synthesize(&mut assembly)?;
 
-  let worker = Worker::new();
-
   assembly.finalize();
+
+  let worker = Worker::new();
   let setup = assembly.create_setup(&worker)?;
 
-  let crs = Crs::<Bn256, CrsForMonomialForm>::crs_42(524288, &worker); // ?
+  let crs_file = OpenOptions::new().read(true).open(crs_path)?;
+  let crs = Crs::<Bn256, CrsForMonomialForm>::read(crs_file)?;
 
   let vk = VerificationKey::<
     Bn256,
@@ -119,7 +118,7 @@ pub fn run(circuit_input: CircuitInput) -> anyhow::Result<()> {
   Ok(())
 }
 
-pub fn run_with_file(input_path: &Path) -> anyhow::Result<()> {
+pub fn run_with_file(crs_path: &Path, input_path: &Path) -> anyhow::Result<()> {
   let circuit_input = CircuitInput::from_path(input_path)?;
-  run(circuit_input)
+  run(crs_path, circuit_input)
 }

@@ -47,8 +47,8 @@ enum SubCommand {
 pub fn invoke_command() -> anyhow::Result<()> {
   match Cli::from_args().subcommand {
     SubCommand::SetupOption { pk_path, vk_path } => {
-      crate::api::ipa::setup::generate_random_parameters_with_file(&pk_path, &vk_path)?;
-      // generate_random_parameters_with_file(&pk_path, &vk_path)?;
+      // crate::api::ipa::setup::generate_random_parameters_with_file(&pk_path, &vk_path)?;
+      generate_random_parameters_with_file(&pk_path, &vk_path)?;
     }
     SubCommand::ProveOption {
       pk_path,
