@@ -50,6 +50,9 @@ impl<E: JubjubEngine> DiscreteLogCircuit<E> {
       &wrapped_coefficient_bits,
       &self.jubjub_params,
     )?;
+    let wrapped_output =
+      wrapped_output.double(cs.namespace(|| "add_output"), &self.jubjub_params)?;
+    // let wrapped_output = wrapped_base_point;
 
     println!(
       "wrapped_output: ({:?}, {:?})",
@@ -65,6 +68,6 @@ impl<E: JubjubEngine> Circuit<E> for DiscreteLogCircuit<E> {
   fn synthesize<CS: ConstraintSystem<E>>(self, cs: &mut CS) -> Result<(), SynthesisError> {
     let wrapped_output = self.run(cs)?;
 
-    wrapped_output.inputize(cs)
+    wrapped_output.inputize(cs.namespace(|| "alloc_output"))
   }
 }

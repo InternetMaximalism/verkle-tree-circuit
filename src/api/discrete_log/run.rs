@@ -1,4 +1,4 @@
-// use std::fs::OpenOptions;
+use std::io::{Error, ErrorKind};
 use std::marker::PhantomData;
 use std::path::Path;
 
@@ -56,8 +56,6 @@ pub fn run(circuit_input: CircuitInput) -> anyhow::Result<()> {
   let mut output_y = circuit_input.base_point_y.unwrap();
   let d = jubjub_params.edwards_d();
   let a = jubjub_params.montgomery_a();
-  println!("d: {:?}", d);
-  println!("a: {:?}", a);
   for b in [false, true] {
     if b {
       let tmp_x = output_x;
@@ -88,7 +86,10 @@ pub fn run(circuit_input: CircuitInput) -> anyhow::Result<()> {
   let public_input = vec![output_x, output_y];
   println!("public_input: {:?}", public_input);
   let prepared_vk = prepare_verifying_key(&setup.vk);
-  verify_proof(&prepared_vk, &proof, &public_input)?;
+  let success = verify_proof(&prepared_vk, &proof, &public_input)?;
+  if !success {
+    return Err(Error::new(ErrorKind::InvalidData, "verification error").into());
+  }
 
   Ok(())
 }
