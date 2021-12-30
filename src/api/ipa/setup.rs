@@ -18,7 +18,7 @@ use franklin_crypto::bellman::{CurveProjective, PrimeField};
 // use franklin_crypto::plonk::circuit::verifier_circuit::channel::RescueChannelGadget;
 // use franklin_crypto::rescue::bn256::Bn256RescueParams;
 
-use crate::circuit::ipa::config::{IpaConfig, PrecomputedWeights, DOMAIN_SIZE, NUM_IPA_ROUND};
+use crate::circuit::ipa::config::{IpaConfig, PrecomputedWeights, DOMAIN_SIZE, NUM_IPA_ROUNDS};
 use crate::circuit::ipa::proof::OptionIpaProof;
 use crate::circuit::ipa::IpaCircuit;
 
@@ -26,7 +26,7 @@ pub fn generate_random_parameters_with_file(
   _pk_path: &Path,
   _vk_path: &Path,
 ) -> anyhow::Result<()> {
-  let num_ipa_rounds = NUM_IPA_ROUND; // log_2(DOMAIN_SIZE)
+  let num_ipa_rounds = NUM_IPA_ROUNDS; // log_2(DOMAIN_SIZE)
 
   let jubjub_params = AltJubjubBn256::new();
   // let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
@@ -63,7 +63,7 @@ pub fn generate_random_parameters_with_file(
   };
   // let rescue_params = Bn256RescueParams::new_checked_2_into_1();
   let dummy_circuit = IpaCircuit::<Bn256, Blake2sTranscript<Fr>> {
-    commitment: (None, None),
+    commitment: None,
     proof: OptionIpaProof::with_depth(ipa_conf.num_ipa_rounds),
     eval_point: None,
     inner_prod: None,
@@ -82,7 +82,7 @@ pub fn generate_random_parameters_with_file(
   // let setup = assembly.create_setup(&worker)?;
 
   let rng = &mut rand::thread_rng();
-  let setup = generate_random_parameters::<Bn256, _, _>(dummy_circuit, rng)?;
+  let _setup = generate_random_parameters::<Bn256, _, _>(dummy_circuit, rng)?;
 
   // println!("crs");
   // let crs_file = OpenOptions::new().read(true).open(crs_path)?;

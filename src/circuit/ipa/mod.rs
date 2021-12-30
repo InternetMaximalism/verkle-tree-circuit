@@ -20,7 +20,7 @@ use self::utils::{commit, fold_points, fold_scalars};
 
 #[derive(Clone)]
 pub struct IpaCircuit<'a, E: JubjubEngine, T: Transcript<E::Fr>> {
-  pub commitment: (Option<E::Fr>, Option<E::Fr>),
+  pub commitment: Option<(E::Fr, E::Fr)>,
   pub proof: OptionIpaProof<E>,
   pub eval_point: Option<E::Fr>,
   pub inner_prod: Option<E::Fr>,
@@ -62,10 +62,10 @@ impl<'a, E: JubjubEngine, T: Transcript<E::Fr>> Circuit<E> for IpaCircuit<'a, E,
     //   &self.jubjub_params,
     // )?;
     let commitment_x = AllocatedNum::alloc(cs.namespace(|| "alloc commitment_x"), || {
-      Ok(self.commitment.0.unwrap())
+      Ok(self.commitment.unwrap().0)
     })?;
     let commitment_y = AllocatedNum::alloc(cs.namespace(|| "alloc commitment_y"), || {
-      Ok(self.commitment.1.unwrap())
+      Ok(self.commitment.unwrap().1)
     })?;
     let mut commitment = EdwardsPoint::interpret(
       cs.namespace(|| "interpret commitment"),
@@ -152,10 +152,14 @@ impl<'a, E: JubjubEngine, T: Transcript<E::Fr>> Circuit<E> for IpaCircuit<'a, E,
     for (i, x) in challenges.iter().enumerate() {
       println!("challenges_inv: {}/{}", i, challenges.len());
       let l_i_x = AllocatedNum::alloc(cs.namespace(|| "alloc l_i_x"), || {
-        Ok(self.proof.l[i].0.unwrap())
+        self.proof.l[i]
+          .map(|v| v.0)
+          .ok_or(SynthesisError::UnconstrainedVariable)
       })?;
       let l_i_y = AllocatedNum::alloc(cs.namespace(|| "alloc l_i_y"), || {
-        Ok(self.proof.l[i].1.unwrap())
+        self.proof.l[i]
+          .map(|v| v.1)
+          .ok_or(SynthesisError::UnconstrainedVariable)
       })?;
       let l: EdwardsPoint<E> = EdwardsPoint::interpret(
         cs.namespace(|| "interpret l"),
@@ -164,10 +168,14 @@ impl<'a, E: JubjubEngine, T: Transcript<E::Fr>> Circuit<E> for IpaCircuit<'a, E,
         &self.jubjub_params,
       )?;
       let r_i_x = AllocatedNum::alloc(cs.namespace(|| "alloc r_i_x"), || {
-        Ok(self.proof.r[i].0.unwrap())
+        self.proof.r[i]
+          .map(|v| v.0)
+          .ok_or(SynthesisError::UnconstrainedVariable)
       })?;
       let r_i_y = AllocatedNum::alloc(cs.namespace(|| "alloc r_i_x"), || {
-        Ok(self.proof.r[i].1.unwrap())
+        self.proof.r[i]
+          .map(|v| v.1)
+          .ok_or(SynthesisError::UnconstrainedVariable)
       })?;
       let r: EdwardsPoint<E> = EdwardsPoint::interpret(
         cs.namespace(|| "interpret r"),

@@ -14,8 +14,8 @@ pub struct PrecomputedWeights<F: PrimeField> {
   pub inverted_domain: Vec<F>,
 }
 
-pub const NUM_IPA_ROUND: usize = 2; // log_2(common.POLY_DEGREE);
-pub const DOMAIN_SIZE: usize = 4; // common.POLY_DEGREE;
+pub const NUM_IPA_ROUNDS: usize = 8; // log_2(common.POLY_DEGREE);
+pub const DOMAIN_SIZE: usize = 256; // common.POLY_DEGREE;
 
 impl<F: PrimeField> PrecomputedWeights<F> {
   pub fn new() -> anyhow::Result<Self> {
