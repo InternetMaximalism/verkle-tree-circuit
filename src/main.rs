@@ -67,14 +67,12 @@ fn test_ipa_circuit() -> Result<(), Box<dyn std::error::Error>> {
   use std::path::Path;
 
   use verkle_circuit::api::ipa::setup::generate_random_parameters_with_file;
-  // use verkle_circuit::circuit::utils::make_crs_with_file;
 
-  let crs_path = Path::new("./tests/ipa/crs");
   let pk_path = Path::new("./tests/ipa/proving_key");
   let vk_path = Path::new("./tests/ipa/verifying_key");
   // let size = 2usize.pow(21); // 2097152
   // make_crs_with_file::<franklin_crypto::bellman::pairing::bn256::Bn256>(crs_path, size)?;
-  generate_random_parameters_with_file(crs_path, pk_path, vk_path)?;
+  generate_random_parameters_with_file(pk_path, vk_path)?;
 
   Ok(())
 }

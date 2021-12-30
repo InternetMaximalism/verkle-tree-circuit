@@ -4,68 +4,42 @@ pub mod utils;
 
 use std::io::{Error, ErrorKind};
 
-use franklin_crypto::bellman::pairing::{CurveAffine, CurveProjective, Engine};
-use franklin_crypto::bellman::plonk::better_better_cs::cs::{
-  Circuit, ConstraintSystem, Gate, GateInternal, Width4MainGateWithDNext,
-};
-use franklin_crypto::bellman::SynthesisError;
-use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
-use franklin_crypto::plonk::circuit::bigint::field::RnsParameters;
-use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
-use franklin_crypto::plonk::circuit::boolean::Boolean;
-use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::AuxData;
-use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::WrappedAffinePoint;
-use franklin_crypto::plonk::circuit::verifier_circuit::channel::ChannelGadget;
-// use franklin_crypto::circuit::boolean::{AllocatedBit, Boolean};
-// use franklin_crypto::circuit::num::AllocatedNum;
+use franklin_crypto::bellman::plonk::commitments::transcript::Transcript;
+use franklin_crypto::bellman::{Circuit, ConstraintSystem, Field, SynthesisError};
+use franklin_crypto::circuit::ecc::EdwardsPoint;
+use franklin_crypto::circuit::num::AllocatedNum;
+use franklin_crypto::jubjub::JubjubEngine;
+// use franklin_crypto::plonk::circuit::verifier_circuit::channel::ChannelGadget;
 
 use crate::circuit::ipa::config::compute_barycentric_coefficients;
+use crate::circuit::utils::read_point;
 
 use self::config::IpaConfig;
 use self::proof::{generate_challenges, OptionIpaProof};
 use self::utils::{commit, fold_points, fold_scalars};
 
-#[derive(Clone, Debug)]
-pub struct IpaCircuit<
-  'a,
-  E: Engine,
-  WP: WrappedAffinePoint<'a, E>,
-  AD: AuxData<E>,
-  T: ChannelGadget<E>,
-> {
-  pub commitment: Option<E::G1>,
-  pub proof: OptionIpaProof<E::G1>,
-  pub eval_point: Option<<E::G1 as CurveProjective>::Scalar>,
-  pub inner_prod: Option<<E::G1 as CurveProjective>::Scalar>,
-  pub ic: IpaConfig<E::G1>,
-  pub rns_params: &'a RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
-  pub aux_data: AD,
-  pub transcript_params: &'a T::Params,
-  pub _m: std::marker::PhantomData<WP>,
+#[derive(Clone)]
+pub struct IpaCircuit<'a, E: JubjubEngine, T: Transcript<E::Fr>> {
+  pub commitment: (Option<E::Fr>, Option<E::Fr>),
+  pub proof: OptionIpaProof<E>,
+  pub eval_point: Option<E::Fr>,
+  pub inner_prod: Option<E::Fr>,
+  pub ipa_conf: IpaConfig<E>,
+  pub jubjub_params: &'a E::Params,
+  pub _transcript_params: std::marker::PhantomData<T>,
 }
 
-impl<'a, E: Engine, T: ChannelGadget<E>, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
-  for IpaCircuit<'a, E, WP, AD, T>
-{
-  type MainGate = Width4MainGateWithDNext;
-
-  fn declare_used_gates() -> Result<Vec<Box<dyn GateInternal<E>>>, SynthesisError> {
-    Ok(vec![
-      Self::MainGate::default().into_internal(),
-      TwoBitDecompositionRangecheckCustomGate::default().into_internal(),
-    ])
-  }
-
-  fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
-    let mut transcript = T::new(self.transcript_params);
+impl<'a, E: JubjubEngine, T: Transcript<E::Fr>> Circuit<E> for IpaCircuit<'a, E, T> {
+  fn synthesize<CS: ConstraintSystem<E>>(self, cs: &mut CS) -> Result<(), SynthesisError> {
+    let mut transcript = T::new();
     // transcript.consume("ipa", cs);
 
-    println!("{:?}", self.proof);
+    // println!("{:?}", self.proof);
     if self.proof.l.len() != self.proof.r.len() {
       return Err(Error::new(ErrorKind::InvalidData, "L and R should be the same size").into());
     }
 
-    if self.proof.l.len() != self.ic.num_ipa_rounds {
+    if self.proof.l.len() != self.ipa_conf.num_ipa_rounds {
       return Err(
         Error::new(
           ErrorKind::InvalidData,
@@ -75,20 +49,39 @@ impl<'a, E: Engine, T: ChannelGadget<E>, WP: WrappedAffinePoint<'a, E>, AD: AuxD
       );
     }
 
-    let eval_point = AllocatedNum::alloc(cs, || Ok(self.eval_point.unwrap()))?;
-    let inner_prod = AllocatedNum::alloc(cs, || Ok(self.inner_prod.unwrap()))?;
-    let mut commitment = WP::alloc(
-      cs,
-      self.commitment.map(|v| v.into_affine()),
-      &self.rns_params,
-      &self.aux_data,
+    let eval_point = AllocatedNum::alloc(cs.namespace(|| "alloc eval_point"), || {
+      Ok(self.eval_point.unwrap())
+    })?;
+    let inner_prod = AllocatedNum::alloc(cs.namespace(|| "alloc inner_prod"), || {
+      Ok(self.inner_prod.unwrap())
+    })?;
+    // let wrapped_base_point = EdwardsPoint::interpret(
+    //   cs.namespace(|| "base_point"),
+    //   &wrapped_base_point_x,
+    //   &wrapped_base_point_y,
+    //   &self.jubjub_params,
+    // )?;
+    let commitment_x = AllocatedNum::alloc(cs.namespace(|| "alloc commitment_x"), || {
+      Ok(self.commitment.0.unwrap())
+    })?;
+    let commitment_y = AllocatedNum::alloc(cs.namespace(|| "alloc commitment_y"), || {
+      Ok(self.commitment.1.unwrap())
+    })?;
+    let mut commitment = EdwardsPoint::interpret(
+      cs.namespace(|| "interpret commitment"),
+      &commitment_x,
+      &commitment_y,
+      &self.jubjub_params,
     )?;
 
-    let bit_limit = None; // Some(256usize);
-    let mut b =
-      compute_barycentric_coefficients::<E, CS>(cs, &self.ic.precomputed_weights, eval_point)?;
+    // let bit_limit = None; // Some(256usize);
+    let mut b = compute_barycentric_coefficients(
+      &mut cs.namespace(|| "compute_barycentric_coefficients"),
+      &self.ipa_conf.precomputed_weights,
+      &eval_point,
+    )?;
 
-    if b.len() != self.ic.srs.len() {
+    if b.len() != self.ipa_conf.srs.len() {
       return Err(
         Error::new(
           ErrorKind::InvalidData,
@@ -98,72 +91,121 @@ impl<'a, E: Engine, T: ChannelGadget<E>, WP: WrappedAffinePoint<'a, E>, AD: AuxD
       );
     }
 
-    transcript.consume_point(cs, commitment.clone())?; // C
-    transcript.consume(eval_point.into(), cs)?; // input point
-    transcript.consume(inner_prod.clone(), cs)?; // output point
+    commitment.get_x().get_value().map(|value| {
+      transcript.commit_field_element(&value);
+    });
+    commitment.get_y().get_value().map(|value| {
+      transcript.commit_field_element(&value);
+    });
+    eval_point.get_value().map(|value| {
+      transcript.commit_field_element(&value);
+    });
+    inner_prod.get_value().map(|value| {
+      transcript.commit_field_element(&value);
+    });
+    // transcript.commit_field_element(&commitment.get_x().get_value().unwrap()); // C_x
+    // transcript.commit_field_element(&commitment.get_y().get_value().unwrap()); // C_y
+    // transcript.commit_field_element(&eval_point.get_value().unwrap()); // input point
+    // transcript.commit_field_element(&inner_prod.get_value().unwrap()); // output point
 
-    let w = transcript.produce_challenge(cs)?; // w
+    // TODO: Add hash constraints or check hash validity.
+    let challenge = transcript.get_challenge_bytes();
+    let mut reader = std::io::Cursor::new(challenge);
+    let w: AllocatedNum<E> = AllocatedNum::alloc(cs.namespace(|| "alloc w"), || {
+      Ok(read_point::<E::Fr>(&mut reader).unwrap())
+    })?; // w
 
-    let mut q = WP::alloc(
-      cs,
-      Some(self.ic.q.into_affine()),
-      &self.rns_params,
-      &self.aux_data,
+    let q_x = AllocatedNum::alloc(cs.namespace(|| "alloc Q_x"), || Ok(self.ipa_conf.q.0))?;
+    let q_y = AllocatedNum::alloc(cs.namespace(|| "alloc Q_y"), || Ok(self.ipa_conf.q.1))?;
+    let mut q = EdwardsPoint::interpret(
+      cs.namespace(|| "interpret Q"),
+      &q_x,
+      &q_y,
+      &self.jubjub_params,
     )?;
     let mut qy = q.clone();
-    q = q.mul::<CS, AD>(cs, &w, bit_limit, &self.rns_params, &self.aux_data)?;
+    let w_bits = w.into_bits_le(cs.namespace(|| "into_bits_le"))?;
+    q = q.mul(cs.namespace(|| "q_mul_w"), &w_bits, &self.jubjub_params)?;
 
-    qy = qy.mul::<CS, AD>(cs, &inner_prod, bit_limit, &self.rns_params, &self.aux_data)?;
-    commitment = commitment.add::<CS>(cs, &mut qy.clone(), &self.rns_params)?;
+    let inner_prod_bits = inner_prod.into_bits_le(&mut cs.namespace(|| "into_bits_le"))?;
+    qy = qy.mul(
+      cs.namespace(|| "qy_mul_inner_prod"),
+      &inner_prod_bits,
+      &self.jubjub_params,
+    )?;
+    commitment = commitment.add(
+      cs.namespace(|| "add qy to commitment"),
+      &mut qy.clone(),
+      &self.jubjub_params,
+    )?;
 
-    let challenges = generate_challenges::<E, CS, WP, AD, T>(
-      cs,
+    let challenges = generate_challenges(
+      &mut cs.namespace(|| "generate_challenges"),
       &self.proof.clone(),
       &mut transcript,
-      &self.rns_params,
-      &self.aux_data,
     )
     .unwrap();
 
     let mut challenges_inv: Vec<AllocatedNum<E>> = Vec::with_capacity(challenges.len());
 
     // Compute expected commitment
-    for (i, &x) in challenges.iter().enumerate() {
+    for (i, x) in challenges.iter().enumerate() {
       println!("challenges_inv: {}/{}", i, challenges.len());
-      let l = WP::alloc(
-        cs,
-        self.proof.l[i].map(|l| l.into_affine()),
-        &self.rns_params,
-        &self.aux_data,
+      let l_i_x = AllocatedNum::alloc(cs.namespace(|| "alloc l_i_x"), || {
+        Ok(self.proof.l[i].0.unwrap())
+      })?;
+      let l_i_y = AllocatedNum::alloc(cs.namespace(|| "alloc l_i_y"), || {
+        Ok(self.proof.l[i].1.unwrap())
+      })?;
+      let l: EdwardsPoint<E> = EdwardsPoint::interpret(
+        cs.namespace(|| "interpret l"),
+        &l_i_x,
+        &l_i_y,
+        &self.jubjub_params,
       )?;
-      let r = WP::alloc(
-        cs,
-        self.proof.l[i].map(|r| r.into_affine()),
-        &self.rns_params,
-        &self.aux_data,
+      let r_i_x = AllocatedNum::alloc(cs.namespace(|| "alloc r_i_x"), || {
+        Ok(self.proof.r[i].0.unwrap())
+      })?;
+      let r_i_y = AllocatedNum::alloc(cs.namespace(|| "alloc r_i_x"), || {
+        Ok(self.proof.r[i].1.unwrap())
+      })?;
+      let r: EdwardsPoint<E> = EdwardsPoint::interpret(
+        cs.namespace(|| "interpret r"),
+        &r_i_x,
+        &r_i_y,
+        &self.jubjub_params,
       )?;
 
-      let x_inv = x.inverse::<CS>(cs).unwrap();
+      let mut minus_one = E::Fr::one();
+      minus_one.negate();
+      let x_inv = x.pow(cs.namespace(|| "inverse x"), &minus_one).unwrap();
       challenges_inv.push(x_inv.clone());
 
-      let one = AllocatedNum::one::<CS>(cs);
-      commitment = commit::<E, CS, WP, AD>(
-        cs,
+      let one = AllocatedNum::one::<CS>();
+      commitment = commit(
+        &mut cs.namespace(|| "commit"),
         &[commitment, l, r],
-        &[one, x, x_inv],
-        bit_limit,
-        &self.rns_params,
-        &self.aux_data,
+        &[one, x.clone(), x_inv],
+        &self.jubjub_params,
       )?;
     }
 
     println!("challenges_inv: {}/{}", challenges.len(), challenges.len());
 
     let mut current_basis = self
-      .ic
+      .ipa_conf
       .srs
       .iter()
-      .map(|v| WP::alloc(cs, Some(v.into_affine()), &self.rns_params, &self.aux_data))
+      .map(|v| {
+        let v_x = AllocatedNum::alloc(cs.namespace(|| "alloc v_x"), || Ok(v.0))?;
+        let v_y = AllocatedNum::alloc(cs.namespace(|| "alloc v_y"), || Ok(v.1))?;
+        EdwardsPoint::interpret(
+          cs.namespace(|| "interpret v"),
+          &v_x,
+          &v_y,
+          &self.jubjub_params,
+        )
+      })
       .collect::<Result<Vec<_>, SynthesisError>>()?;
 
     println!("reduction starts");
@@ -184,16 +226,8 @@ impl<'a, E: Engine, T: ChannelGadget<E>, WP: WrappedAffinePoint<'a, E>, AD: AuxD
       let b_l = b_chunks.next().unwrap().to_vec();
       let b_r = b_chunks.next().unwrap().to_vec();
 
-      b = fold_scalars::<E, CS>(cs, &b_l, &b_r, x_inv.clone())?;
-      current_basis = fold_points::<E, CS, WP, AD>(
-        cs,
-        &g_l,
-        &g_r,
-        x_inv.clone(),
-        bit_limit,
-        &self.rns_params,
-        &self.aux_data,
-      )?;
+      b = fold_scalars::<E, CS>(cs, &b_l, &b_r, x_inv)?;
+      current_basis = fold_points::<E, CS>(cs, &g_l, &g_r, x_inv, &self.jubjub_params)?;
     }
 
     println!("x_inv: {}/{}", challenges_inv.len(), challenges_inv.len());
@@ -217,20 +251,44 @@ impl<'a, E: Engine, T: ChannelGadget<E>, WP: WrappedAffinePoint<'a, E>, AD: AuxD
     let start = std::time::Instant::now();
 
     // Compute `result = G[0] * a + (a * b[0]) * Q`.
-    let proof_a = AllocatedNum::alloc(cs, || Ok(self.proof.a.unwrap()))?;
+    let proof_a = AllocatedNum::alloc(cs.namespace(|| "alloc proof_a"), || {
+      Ok(self.proof.a.unwrap())
+    })?;
     let mut result1 = current_basis[0].clone(); // result1 = G[0]
-    let mut part_2a = b[0]; // part_2a = b[0]
+    let mut part_2a = b[0].clone(); // part_2a = b[0]
 
-    result1 = result1.mul::<CS, AD>(cs, &proof_a, bit_limit, &self.rns_params, &self.aux_data)?; // result1 *= proof_a
+    let proof_a_bits = proof_a.into_bits_le(cs.namespace(|| "alloc proof_a"))?;
+    result1 = result1.mul(
+      cs.namespace(|| "alloc proof_a"),
+      &proof_a_bits,
+      &self.jubjub_params,
+    )?; // result1 *= proof_a
 
-    part_2a = part_2a.mul::<CS>(cs, &proof_a)?; // part_2a *= proof_a
-    let mut result2 = q.mul::<CS, AD>(cs, &part_2a, bit_limit, &self.rns_params, &self.aux_data)?; // q *= part_2a
+    part_2a = part_2a.mul(cs.namespace(|| "multiply part_2a by proof_a"), &proof_a)?; // part_2a *= proof_a
+    let part_2a_bits = part_2a.into_bits_le(cs.namespace(|| "part_2a into LE bits"))?;
+    let result2 = q.mul(
+      cs.namespace(|| "multiply q by part_2a_bits"),
+      &part_2a_bits,
+      &self.jubjub_params,
+    )?; // q *= part_2a
 
-    let result = result1.add::<CS>(cs, &mut result2, &self.rns_params)?; // result = result1 + result2
+    let result = result1.add(
+      cs.namespace(|| "add result1 to result2"),
+      &result2,
+      &self.jubjub_params,
+    )?; // result = result1 + result2
 
     // Ensure `commitment` is equal to `result`.
-    let is_ok = result.equals::<CS>(cs, &commitment, &self.rns_params)?;
-    Boolean::enforce_equal(cs, &is_ok, &Boolean::constant(true))?;
+    AllocatedNum::equals(
+      cs.namespace(|| "ensure commitment_x is equal to result_y"),
+      &commitment.get_x(),
+      &result.get_x(),
+    )?;
+    AllocatedNum::equals(
+      cs.namespace(|| "ensure commitment_y is equal to result_y"),
+      &commitment.get_y(),
+      &result.get_y(),
+    )?;
 
     println!(
       "verification check ends: {} s",

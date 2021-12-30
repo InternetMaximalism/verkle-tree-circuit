@@ -1,10 +1,8 @@
 use std::io::{Error, ErrorKind};
 
-use franklin_crypto::bellman::pairing::ff::PrimeField;
-use franklin_crypto::bellman::pairing::{CurveProjective, Engine};
-use franklin_crypto::bellman::plonk::better_better_cs::cs::ConstraintSystem;
-use franklin_crypto::bellman::SynthesisError;
-use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
+use franklin_crypto::bellman::{ConstraintSystem, Field, PrimeField, SynthesisError};
+use franklin_crypto::circuit::num::AllocatedNum;
+use franklin_crypto::jubjub::JubjubEngine;
 
 use super::utils::from_bytes_le;
 
@@ -16,8 +14,8 @@ pub struct PrecomputedWeights<F: PrimeField> {
   pub inverted_domain: Vec<F>,
 }
 
-pub const NUM_IPA_ROUND: usize = 1; // log_2(common.POLY_DEGREE);
-pub const DOMAIN_SIZE: usize = 2; // common.POLY_DEGREE;
+pub const NUM_IPA_ROUND: usize = 2; // log_2(common.POLY_DEGREE);
+pub const DOMAIN_SIZE: usize = 4; // common.POLY_DEGREE;
 
 impl<F: PrimeField> PrecomputedWeights<F> {
   pub fn new() -> anyhow::Result<Self> {
@@ -102,49 +100,59 @@ impl<F: PrimeField> PrecomputedWeights<F> {
 // is equal to p(z)
 // Note that `z` should not be in the domain
 // This can also be seen as the lagrange coefficients L_i(point)
-pub fn compute_barycentric_coefficients<E: Engine, CS: ConstraintSystem<E>>(
-  cs: &mut CS,
+pub fn compute_barycentric_coefficients<E: JubjubEngine, CS: ConstraintSystem<E>>(
+  mut cs: CS,
   precomputed_weights: &PrecomputedWeights<E::Fr>,
-  point: AllocatedNum<E>,
+  point: &AllocatedNum<E>,
 ) -> Result<Vec<AllocatedNum<E>>, SynthesisError> {
   // Compute A(x_i) * point - x_i
   let mut lagrange_evals: Vec<AllocatedNum<E>> = Vec::with_capacity(DOMAIN_SIZE);
   for i in 0..DOMAIN_SIZE {
-    let weight =
-      AllocatedNum::alloc::<CS, _>(cs, || Ok(precomputed_weights.barycentric_weights[i]))?;
-    let wrapped_i =
-      AllocatedNum::alloc::<CS, _>(cs, || Ok(from_bytes_le(&i.to_le_bytes()).unwrap()))?;
-    let mut eval = point;
-    eval = eval.sub::<CS>(cs, &wrapped_i)?;
-    eval = eval.mul::<CS>(cs, &weight)?;
+    let weight = AllocatedNum::alloc(cs.namespace(|| "alloc weight"), || {
+      Ok(precomputed_weights.barycentric_weights[i])
+    })?;
+    let wrapped_i = AllocatedNum::alloc(cs.namespace(|| "alloc i"), || {
+      Ok(from_bytes_le(&i.to_le_bytes()).unwrap())
+    })?;
+    let mut eval = point.clone();
+    eval = eval.sub(cs.namespace(|| "sub eval to i"), &wrapped_i)?;
+    eval = eval.mul(cs.namespace(|| "multiply eval by weight"), &weight)?;
     lagrange_evals.push(eval);
   }
 
-  let mut total_prod = AllocatedNum::one::<CS>(cs);
+  let mut total_prod = AllocatedNum::one::<CS>();
   for i in 0..DOMAIN_SIZE {
-    let wrapped_i =
-      AllocatedNum::alloc::<CS, _>(cs, || Ok(from_bytes_le(&i.to_le_bytes()).unwrap()))?;
-    let mut tmp = point;
-    tmp = tmp.sub::<CS>(cs, &wrapped_i)?;
-    total_prod = total_prod.mul::<CS>(cs, &tmp)?;
+    let wrapped_i = AllocatedNum::alloc(cs.namespace(|| "alloc i"), || {
+      Ok(from_bytes_le(&i.to_le_bytes()).unwrap())
+    })?;
+    let mut tmp = point.clone();
+    tmp = tmp.sub(cs.namespace(|| "sub tmp to i"), &wrapped_i)?;
+    total_prod = total_prod.mul(cs.namespace(|| "multiply total_prod by tmp"), &tmp)?;
   }
+
+  let mut minus_one = E::Fr::one();
+  minus_one.negate();
 
   for i in 0..DOMAIN_SIZE {
     // TODO: there was no batch inversion API.
     // TODO: once we fully switch over to bandersnatch
     // TODO: we can switch to batch invert API
 
-    lagrange_evals[i] = lagrange_evals[i].inverse::<CS>(cs)?;
-    lagrange_evals[i] = lagrange_evals[i].mul::<CS>(cs, &total_prod)?;
+    lagrange_evals[i] =
+      lagrange_evals[i].pow(cs.namespace(|| "inverse lagrange_evals[i]"), &minus_one)?;
+    lagrange_evals[i] = lagrange_evals[i].mul(
+      cs.namespace(|| "multiply lagrange_evals[i] by total_prod"),
+      &total_prod,
+    )?;
   }
 
   Ok(lagrange_evals)
 }
 
-#[derive(Clone, Debug)]
-pub struct IpaConfig<G: CurveProjective> {
-  pub srs: Vec<G>,
-  pub q: G,
-  pub precomputed_weights: PrecomputedWeights<G::Scalar>,
+#[derive(Clone)]
+pub struct IpaConfig<E: JubjubEngine> {
+  pub srs: Vec<(E::Fr, E::Fr)>,
+  pub q: (E::Fr, E::Fr),
+  pub precomputed_weights: PrecomputedWeights<E::Fr>,
   pub num_ipa_rounds: usize,
 }
