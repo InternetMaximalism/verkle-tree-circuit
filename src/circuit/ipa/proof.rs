@@ -1,4 +1,3 @@
-use franklin_crypto::bellman::plonk::commitments::transcript::Transcript;
 use franklin_crypto::bellman::{ConstraintSystem, SynthesisError};
 // use franklin_crypto::circuit::ecc::EdwardsPoint;
 use franklin_crypto::circuit::num::AllocatedNum;
@@ -7,9 +6,7 @@ use franklin_crypto::jubjub::JubjubEngine;
 // use franklin_crypto::rescue::rescue_transcript::RescueTranscriptForRNS;
 // use franklin_crypto::rescue::RescueEngine;
 
-use crate::circuit::utils::read_point;
-
-// use super::transcript::Transcript;
+use super::transcript::Transcript;
 
 #[derive(Clone, Debug)]
 pub struct IpaProof<E: JubjubEngine> {
@@ -53,7 +50,7 @@ impl<E: JubjubEngine> From<IpaProof<E>> for OptionIpaProof<E> {
   }
 }
 
-pub fn generate_challenges<'a, E: JubjubEngine, CS: ConstraintSystem<E>, T: Transcript<E::Fr>>(
+pub fn generate_challenges<'a, E: JubjubEngine, CS: ConstraintSystem<E>, T: Transcript<E>>(
   cs: &mut CS,
   ipa_proof: &OptionIpaProof<E>,
   transcript: &mut T,
@@ -75,24 +72,18 @@ pub fn generate_challenges<'a, E: JubjubEngine, CS: ConstraintSystem<E>, T: Tran
     // transcript.consume_point(cs, wrapped_l)?; // L
     // transcript.consume_point(cs, wrapped_r)?; // R
 
-    l.map(|p| {
-      transcript.commit_field_element(&p.0);
-      transcript.commit_field_element(&p.1);
-    });
-    r.map(|p| {
-      transcript.commit_field_element(&p.0);
-      transcript.commit_field_element(&p.1);
-    });
+    transcript.commit_field_element(cs, &l.map(|p| p.0))?;
+    transcript.commit_field_element(cs, &l.map(|p| p.1))?;
+    transcript.commit_field_element(cs, &r.map(|p| p.0))?;
+    transcript.commit_field_element(cs, &r.map(|p| p.1))?;
     // transcript.commit_field_element(&l.0.unwrap()); // L[i]_x
     // transcript.commit_field_element(&l.1.unwrap()); // L[i]_y
     // transcript.commit_field_element(&r.0.unwrap()); // R[i]_x
     // transcript.commit_field_element(&l.1.unwrap()); // R[i]_y
 
-    // TODO: Add hash constraints or check hash validity.
-    let challenge = transcript.get_challenge_bytes();
-    let mut reader = std::io::Cursor::new(challenge);
+    let challenge = transcript.get_challenge();
     let c: AllocatedNum<E> = AllocatedNum::alloc(cs.namespace(|| "alloc challenge"), || {
-      Ok(read_point::<E::Fr>(&mut reader).unwrap())
+      challenge.ok_or(SynthesisError::Unsatisfiable)
     })?;
     challenges.push(c);
   }

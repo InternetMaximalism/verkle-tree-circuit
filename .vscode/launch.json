@@ -67,7 +67,7 @@
           "kind": "bin"
         }
       },
-      "args": ["test_discrete_log_circuit"],
+      "args": ["test_ipa_circuit"],
       "cwd": "${workspaceFolder}"
     }
   ]

@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+// use std::marker::PhantomData;
 use std::path::Path;
 
 // use franklin_crypto::alt_babyjubjub::AltJubjubBn256;
@@ -7,7 +7,7 @@ use franklin_crypto::alt_babyjubjub::AltJubjubBn256;
 use franklin_crypto::bellman::groth16::generate_random_parameters;
 use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr, FrRepr};
 use franklin_crypto::bellman::pairing::Engine;
-use franklin_crypto::bellman::plonk::commitments::transcript::Blake2sTranscript;
+// use franklin_crypto::bellman::plonk::commitments::transcript::Blake2sTranscript;
 use franklin_crypto::bellman::{CurveProjective, PrimeField};
 
 // use franklin_crypto::plonk::circuit::bigint::field::RnsParameters;
@@ -62,14 +62,14 @@ pub fn generate_random_parameters_with_file(
     num_ipa_rounds,
   };
   // let rescue_params = Bn256RescueParams::new_checked_2_into_1();
-  let dummy_circuit = IpaCircuit::<Bn256, Blake2sTranscript<Fr>> {
+  let dummy_circuit = IpaCircuit::<Bn256> {
+    transcript_params: None,
     commitment: None,
     proof: OptionIpaProof::with_depth(ipa_conf.num_ipa_rounds),
     eval_point: None,
     inner_prod: None,
     ipa_conf: ipa_conf.clone(),
     jubjub_params: &jubjub_params,
-    _transcript_params: PhantomData,
   };
 
   // let mut assembly = SetupAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();

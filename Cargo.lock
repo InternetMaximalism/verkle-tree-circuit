@@ -59,6 +59,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 
 [[package]]
+name = "arrayvec"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8da52d66c7071e2e3fa2a1e5c6d088fec47b593032b254f5e980de8ea54454d6"
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -82,7 +88,7 @@ source = "git+https://github.com/matter-labs/bellman?branch=beta#5809cc165db0a2e
 dependencies = [
  "bit-vec",
  "blake2s_const",
- "blake2s_simd",
+ "blake2s_simd 0.5.11",
  "byteorder",
  "cfg-if 1.0.0",
  "crossbeam",
@@ -147,6 +153,17 @@ checksum = "9e461a7034e85b211a4acb57ee2e6730b32912b06c08cc242243c39fc21ae6a2"
 dependencies = [
  "arrayref",
  "arrayvec 0.5.2",
+ "constant_time_eq",
+]
+
+[[package]]
+name = "blake2s_simd"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db539cc2b5f6003621f1cd9ef92d7ded8ea5232c7de0f9faa2de251cd98730d4"
+dependencies = [
+ "arrayref",
+ "arrayvec 0.7.2",
  "constant_time_eq",
 ]
 
@@ -403,7 +420,7 @@ dependencies = [
  "bit-vec",
  "blake2",
  "blake2-rfc_bellman_edition",
- "blake2s_simd",
+ "blake2s_simd 0.5.11",
  "byteorder",
  "digest 0.9.0",
  "hex",
@@ -1073,6 +1090,7 @@ name = "verkle-circuit"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "blake2s_simd 1.0.0",
  "byteorder",
  "bytes",
  "franklin-crypto",

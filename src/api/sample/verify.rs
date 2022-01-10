@@ -5,7 +5,7 @@ use std::{fs::File, path::Path};
 use franklin_crypto::bellman::groth16::{prepare_verifying_key, verify_proof, Proof, VerifyingKey};
 use franklin_crypto::bellman::pairing::bn256::Bn256;
 
-use crate::circuit::utils::read_point;
+use crate::circuit::utils::read_point_le;
 
 pub fn verify_proof_with_file(
   vk_path: &Path,
@@ -18,7 +18,8 @@ pub fn verify_proof_with_file(
   let proof_file = File::open(proof_path)?;
   let proof = Proof::<Bn256>::read(&proof_file)?;
   let public_wires_bytes = hex::decode(read(public_wires_path)?)?;
-  let public_inputs = vec![read_point(&mut std::io::Cursor::new(public_wires_bytes))?];
+  let reader = &mut std::io::Cursor::new(public_wires_bytes);
+  let public_inputs = vec![read_point_le(reader)?];
 
   let success = verify_proof(&verifying_key, &proof, &public_inputs)?;
   if !success {

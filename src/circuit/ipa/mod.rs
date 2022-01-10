@@ -1,10 +1,11 @@
 pub mod config;
+pub mod dummy_transcript;
 pub mod proof;
+pub mod transcript;
 pub mod utils;
 
 use std::io::{Error, ErrorKind};
 
-use franklin_crypto::bellman::plonk::commitments::transcript::Transcript;
 use franklin_crypto::bellman::{Circuit, ConstraintSystem, Field, SynthesisError};
 use franklin_crypto::circuit::ecc::EdwardsPoint;
 use franklin_crypto::circuit::num::AllocatedNum;
@@ -12,26 +13,26 @@ use franklin_crypto::jubjub::JubjubEngine;
 // use franklin_crypto::plonk::circuit::verifier_circuit::channel::ChannelGadget;
 
 use crate::circuit::ipa::config::compute_barycentric_coefficients;
-use crate::circuit::utils::read_point;
 
 use self::config::IpaConfig;
 use self::proof::{generate_challenges, OptionIpaProof};
+use self::transcript::{Transcript, WrappedTranscript};
 use self::utils::{commit, fold_points, fold_scalars};
 
 #[derive(Clone)]
-pub struct IpaCircuit<'a, E: JubjubEngine, T: Transcript<E::Fr>> {
+pub struct IpaCircuit<'a, E: JubjubEngine> {
+  pub transcript_params: Option<E::Fr>,
   pub commitment: Option<(E::Fr, E::Fr)>,
   pub proof: OptionIpaProof<E>,
   pub eval_point: Option<E::Fr>,
   pub inner_prod: Option<E::Fr>,
   pub ipa_conf: IpaConfig<E>,
   pub jubjub_params: &'a E::Params,
-  pub _transcript_params: std::marker::PhantomData<T>,
 }
 
-impl<'a, E: JubjubEngine, T: Transcript<E::Fr>> Circuit<E> for IpaCircuit<'a, E, T> {
+impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
   fn synthesize<CS: ConstraintSystem<E>>(self, cs: &mut CS) -> Result<(), SynthesisError> {
-    let mut transcript = T::new();
+    let mut transcript = WrappedTranscript::new(self.transcript_params);
     // transcript.consume("ipa", cs);
 
     // println!("{:?}", self.proof);
@@ -91,29 +92,19 @@ impl<'a, E: JubjubEngine, T: Transcript<E::Fr>> Circuit<E> for IpaCircuit<'a, E,
       );
     }
 
-    commitment.get_x().get_value().map(|value| {
-      transcript.commit_field_element(&value);
-    });
-    commitment.get_y().get_value().map(|value| {
-      transcript.commit_field_element(&value);
-    });
-    eval_point.get_value().map(|value| {
-      transcript.commit_field_element(&value);
-    });
-    inner_prod.get_value().map(|value| {
-      transcript.commit_field_element(&value);
-    });
+    transcript.commit_field_element(cs, &commitment.get_x().get_value())?;
+    transcript.commit_field_element(cs, &commitment.get_y().get_value())?;
+    transcript.commit_field_element(cs, &eval_point.get_value())?;
+    transcript.commit_field_element(cs, &inner_prod.get_value())?;
     // transcript.commit_field_element(&commitment.get_x().get_value().unwrap()); // C_x
     // transcript.commit_field_element(&commitment.get_y().get_value().unwrap()); // C_y
     // transcript.commit_field_element(&eval_point.get_value().unwrap()); // input point
     // transcript.commit_field_element(&inner_prod.get_value().unwrap()); // output point
 
-    // TODO: Add hash constraints or check hash validity.
-    let challenge = transcript.get_challenge_bytes();
-    let mut reader = std::io::Cursor::new(challenge);
+    let challenge = transcript.get_challenge();
     let w: AllocatedNum<E> = AllocatedNum::alloc(cs.namespace(|| "alloc w"), || {
-      Ok(read_point::<E::Fr>(&mut reader).unwrap())
-    })?; // w
+      challenge.ok_or(SynthesisError::Unsatisfiable)
+    })?;
 
     let q_x = AllocatedNum::alloc(cs.namespace(|| "alloc Q_x"), || Ok(self.ipa_conf.q.0))?;
     let q_y = AllocatedNum::alloc(cs.namespace(|| "alloc Q_y"), || Ok(self.ipa_conf.q.1))?;
@@ -152,14 +143,16 @@ impl<'a, E: JubjubEngine, T: Transcript<E::Fr>> Circuit<E> for IpaCircuit<'a, E,
     for (i, x) in challenges.iter().enumerate() {
       println!("challenges_inv: {}/{}", i, challenges.len());
       let l_i_x = AllocatedNum::alloc(cs.namespace(|| "alloc l_i_x"), || {
-        self.proof.l[i]
-          .map(|v| v.0)
-          .ok_or(SynthesisError::UnconstrainedVariable)
+        Ok(self.proof.l[i].unwrap().0)
+        // self.proof.l[i]
+        //   .map(|v| v.0)
+        //   .ok_or(SynthesisError::UnconstrainedVariable)
       })?;
       let l_i_y = AllocatedNum::alloc(cs.namespace(|| "alloc l_i_y"), || {
-        self.proof.l[i]
-          .map(|v| v.1)
-          .ok_or(SynthesisError::UnconstrainedVariable)
+        Ok(self.proof.l[i].unwrap().1)
+        // self.proof.l[i]
+        //   .map(|v| v.1)
+        //   .ok_or(SynthesisError::UnconstrainedVariable)
       })?;
       let l: EdwardsPoint<E> = EdwardsPoint::interpret(
         cs.namespace(|| "interpret l"),
@@ -168,14 +161,16 @@ impl<'a, E: JubjubEngine, T: Transcript<E::Fr>> Circuit<E> for IpaCircuit<'a, E,
         &self.jubjub_params,
       )?;
       let r_i_x = AllocatedNum::alloc(cs.namespace(|| "alloc r_i_x"), || {
-        self.proof.r[i]
-          .map(|v| v.0)
-          .ok_or(SynthesisError::UnconstrainedVariable)
+        Ok(self.proof.r[i].unwrap().0)
+        // self.proof.r[i]
+        //   .map(|v| v.0)
+        //   .ok_or(SynthesisError::UnconstrainedVariable)
       })?;
       let r_i_y = AllocatedNum::alloc(cs.namespace(|| "alloc r_i_x"), || {
-        self.proof.r[i]
-          .map(|v| v.1)
-          .ok_or(SynthesisError::UnconstrainedVariable)
+        Ok(self.proof.r[i].unwrap().1)
+        // self.proof.r[i]
+        //   .map(|v| v.1)
+        //   .ok_or(SynthesisError::UnconstrainedVariable)
       })?;
       let r: EdwardsPoint<E> = EdwardsPoint::interpret(
         cs.namespace(|| "interpret r"),

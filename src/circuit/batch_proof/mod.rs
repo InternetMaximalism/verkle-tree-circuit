@@ -1,4 +1,3 @@
-use franklin_crypto::bellman::plonk::commitments::transcript::Transcript;
 use franklin_crypto::bellman::{Circuit, ConstraintSystem, Field, SynthesisError};
 use franklin_crypto::circuit::ecc::EdwardsPoint;
 use franklin_crypto::circuit::num::AllocatedNum;
@@ -6,10 +5,12 @@ use franklin_crypto::jubjub::JubjubEngine;
 
 use super::ipa::config::IpaConfig;
 use super::ipa::proof::OptionIpaProof;
+use super::ipa::transcript::{Transcript, WrappedTranscript};
 use super::ipa::IpaCircuit;
-use super::utils::read_point;
+use super::utils::read_point_le;
 
-pub struct BatchProofCircuit<'a, E: JubjubEngine, T: Transcript<E::Fr>> {
+pub struct BatchProofCircuit<'a, E: JubjubEngine> {
+  pub transcript_params: Option<E::Fr>,
   pub proof: OptionIpaProof<E>,
   pub d: Option<(E::Fr, E::Fr)>,
   pub commitments: Vec<Option<(E::Fr, E::Fr)>>,
@@ -17,12 +18,11 @@ pub struct BatchProofCircuit<'a, E: JubjubEngine, T: Transcript<E::Fr>> {
   pub zs: Vec<Option<u8>>,
   pub ipa_conf: IpaConfig<E>,
   pub jubjub_params: &'a E::Params,
-  pub _transcript_params: std::marker::PhantomData<T>,
 }
 
-impl<'a, E: JubjubEngine, T: Transcript<E::Fr>> Circuit<E> for BatchProofCircuit<'a, E, T> {
+impl<'a, E: JubjubEngine> Circuit<E> for BatchProofCircuit<'a, E> {
   fn synthesize<CS: ConstraintSystem<E>>(self, cs: &mut CS) -> Result<(), SynthesisError> {
-    let mut transcript = T::new();
+    let mut transcript = WrappedTranscript::new(self.transcript_params);
     // transcript.DomainSep("multiproof");
 
     if self.commitments.len() != self.ys.len() {
@@ -48,25 +48,31 @@ impl<'a, E: JubjubEngine, T: Transcript<E::Fr>> Circuit<E> for BatchProofCircuit
     }
 
     for i in 0..num_queries {
-      self.commitments[i].map(|p| transcript.commit_field_element(&p.0)); // commitments[i]_x
-      self.commitments[i].map(|p| transcript.commit_field_element(&p.1)); // commitments[i]_y
-      self.zs[i].map(|v| transcript.commit_bytes(&[v]));
-      self.ys[i].map(|v| transcript.commit_field_element(&v)); // y
-    }
-    // TODO: Add hash constraints or check hash validity.
-    let challenge = transcript.get_challenge_bytes();
-    let mut reader = std::io::Cursor::new(challenge);
-    let r: AllocatedNum<E> = AllocatedNum::alloc(cs.namespace(|| "alloc r"), || {
-      Ok(read_point::<E::Fr>(&mut reader).unwrap())
-    })?; // r
+      transcript.commit_field_element(cs, &self.commitments[i].map(|p| p.0))?; // commitments[i]_x
+      transcript.commit_field_element(cs, &self.commitments[i].map(|p| p.1))?; // commitments[i]_y
+      transcript.commit_field_element(
+        cs,
+        &self.zs[i].map(|v| {
+          let reader = &mut std::io::Cursor::new(vec![v]);
 
-    self.d.map(|v| transcript.commit_field_element(&v.0)); // D_x
-    self.d.map(|v| transcript.commit_field_element(&v.1)); // D_y
-    let challenge = transcript.get_challenge_bytes();
-    let mut reader = std::io::Cursor::new(challenge);
+          read_point_le::<E::Fr>(reader).unwrap()
+        }),
+      )?;
+      transcript.commit_field_element(cs, &self.ys[i])?;
+      // y
+    }
+
+    let challenge = transcript.get_challenge();
+    let r: AllocatedNum<E> = AllocatedNum::alloc(cs.namespace(|| "alloc r"), || {
+      challenge.ok_or(SynthesisError::Unsatisfiable)
+    })?;
+
+    transcript.commit_field_element(&mut cs.namespace(|| "commit"), &self.d.map(|v| v.0))?; // D_x
+    transcript.commit_field_element(&mut cs.namespace(|| "commit"), &self.d.map(|v| v.1))?; // D_y
+    let challenge = transcript.get_challenge();
     let t: AllocatedNum<E> = AllocatedNum::alloc(cs.namespace(|| "alloc t"), || {
-      Ok(read_point::<E::Fr>(&mut reader).unwrap())
-    })?; // t
+      challenge.ok_or(SynthesisError::Unsatisfiable)
+    })?;
 
     // Compute helper_scalars. This is r^i / t - z_i
     //
@@ -82,7 +88,7 @@ impl<'a, E: JubjubEngine, T: Transcript<E::Fr>> Circuit<E> for BatchProofCircuit
         self.zs[i]
           .map(|v| {
             let mut reader = std::io::Cursor::new(vec![v]);
-            read_point::<E::Fr>(&mut reader).unwrap()
+            read_point_le::<E::Fr>(&mut reader).unwrap()
           })
           .ok_or(SynthesisError::Unsatisfiable)
       })?;
@@ -113,7 +119,7 @@ impl<'a, E: JubjubEngine, T: Transcript<E::Fr>> Circuit<E> for BatchProofCircuit
     // Compute E = SUM C_i * (r^i / t - z_i) = SUM C_i * helper_scalars
     let zero = AllocatedNum::zero(cs.namespace(|| "alloc zero"))?;
     let mut e = EdwardsPoint::interpret(
-      cs.namespace(|| "interpret"),
+      cs.namespace(|| "interpret E"),
       &zero,
       &AllocatedNum::one::<CS>(),
       self.jubjub_params,
@@ -132,32 +138,32 @@ impl<'a, E: JubjubEngine, T: Transcript<E::Fr>> Circuit<E> for BatchProofCircuit
         self.jubjub_params,
       )?;
       let helper_scalars_i_bits =
-        helper_scalars[i].into_bits_le(cs.namespace(|| "helper_scalars_i into_bits_le"))?;
+        helper_scalars[i].into_bits_le(cs.namespace(|| "helper_scalars_i into LE bits"))?;
       tmp = tmp.mul(
         cs.namespace(|| "multiply tmp by helper_scalars_i_bits"),
         &helper_scalars_i_bits,
         self.jubjub_params,
       )?;
-      e = e.add(cs.namespace(|| "add e to tmp"), &tmp, self.jubjub_params)?;
+      e = e.add(cs.namespace(|| "add E to tmp"), &tmp, self.jubjub_params)?;
     }
 
-    e.get_x()
-      .get_value()
-      .map(|v| transcript.commit_field_element(&v)); // E_x
-    e.get_y()
-      .get_value()
-      .map(|v| transcript.commit_field_element(&v)); // E_y
+    transcript.commit_field_element(cs, &e.get_x().get_value())?; // E_x
+    transcript.commit_field_element(cs, &e.get_y().get_value())?; // E_y
 
-    let minus_d_x = AllocatedNum::alloc(cs.namespace(|| "alloc tmp_x"), || {
+    let minus_d_x = AllocatedNum::alloc(cs.namespace(|| "alloc -D_x"), || {
       let mut minus_d_x = self.d.unwrap().0;
       minus_d_x.negate();
 
       Ok(minus_d_x)
     })?;
     let d_y: AllocatedNum<E> =
-      AllocatedNum::alloc(cs.namespace(|| "alloc tmp_y"), || Ok(self.d.unwrap().1))?;
-    let minus_d =
-      EdwardsPoint::interpret(cs.namespace(|| ""), &minus_d_x, &d_y, self.jubjub_params)?;
+      AllocatedNum::alloc(cs.namespace(|| "alloc D_y"), || Ok(self.d.unwrap().1))?;
+    let minus_d = EdwardsPoint::interpret(
+      cs.namespace(|| "interpret -D"),
+      &minus_d_x,
+      &d_y,
+      self.jubjub_params,
+    )?;
     let e_minus_d = e.add(
       cs.namespace(|| "subtract D from E"),
       &minus_d,
@@ -171,16 +177,17 @@ impl<'a, E: JubjubEngine, T: Transcript<E::Fr>> Circuit<E> for BatchProofCircuit
     } else {
       None
     };
-    let ipa = IpaCircuit::<'_, E, T> {
+    let transcript_params = transcript.get_challenge();
+    let ipa = IpaCircuit::<'_, E> {
       commitment: ipa_commitment,
       proof: self.proof,
       eval_point: t.get_value(),
       inner_prod: g_2_t.get_value(),
       ipa_conf: self.ipa_conf,
       jubjub_params: self.jubjub_params,
-      _transcript_params: std::marker::PhantomData,
+      transcript_params,
     };
 
-    ipa.synthesize(&mut cs.namespace(|| "IPA"))
+    ipa.synthesize(cs)
   }
 }
