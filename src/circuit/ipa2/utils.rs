@@ -1,10 +1,15 @@
 use std::io::{Error, ErrorKind};
 
 use franklin_crypto::bellman::pairing::Engine;
-use franklin_crypto::bellman::{ConstraintSystem, PrimeField, PrimeFieldRepr, SynthesisError};
-use franklin_crypto::circuit::ecc::EdwardsPoint;
-use franklin_crypto::circuit::num::AllocatedNum;
-use franklin_crypto::jubjub::JubjubEngine;
+use franklin_crypto::bellman::plonk::better_better_cs::cs::ConstraintSystem;
+use franklin_crypto::bellman::{PrimeField, PrimeFieldRepr, SynthesisError};
+// use franklin_crypto::circuit::ecc::EdwardsPoint;
+use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
+use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::AuxData;
+use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::WrappedAffinePoint;
+
+use super::rns::BaseRnsParameters;
+// use franklin_crypto::jubjub::JubjubEngine;
 
 pub fn read_point_le<F: PrimeField>(bytes: &[u8]) -> anyhow::Result<F> {
   let mut padded_bytes = bytes.to_vec();
@@ -64,8 +69,8 @@ pub fn fold_scalars<E: Engine, CS: ConstraintSystem<E>>(
 
   let mut result = b.to_vec();
   for i in 0..result.len() {
-    result[i] = result[i].mul(cs.namespace(|| "mul"), x)?;
-    result[i] = result[i].add(cs.namespace(|| "add"), &a[i])?;
+    result[i] = result[i].mul(cs, x)?;
+    result[i] = result[i].add(cs, &a[i])?;
   }
 
   Ok(result)
@@ -74,54 +79,57 @@ pub fn fold_scalars<E: Engine, CS: ConstraintSystem<E>>(
 // Computes c[i] = a[i] + b[i] * x
 // returns c
 // panics if len(a) != len(b)
-pub fn fold_points<'a, E: JubjubEngine, CS: ConstraintSystem<E>>(
+pub fn fold_points<
+  'a,
+  E: Engine,
+  CS: ConstraintSystem<E>,
+  WP: WrappedAffinePoint<'a, E>,
+  AD: AuxData<E>,
+>(
   cs: &mut CS,
-  a: &[EdwardsPoint<E>],
-  b: &[EdwardsPoint<E>],
+  a: &[WP],
+  b: &[WP],
   x: &AllocatedNum<E>,
-  jubjub_params: &E::Params,
-) -> Result<Vec<EdwardsPoint<E>>, SynthesisError> {
+  rns_params: &'a BaseRnsParameters<E>,
+  aux_data: &AD,
+) -> Result<Vec<WP>, SynthesisError> {
   if a.len() != b.len() {
     return Err(Error::new(ErrorKind::InvalidData, "slices not equal length").into());
   }
 
-  let mut result = b.to_vec();
-  for i in 0..b.len() {
-    let x_bits = x.into_bits_le(cs.namespace(|| "into_bits_le"))?;
-    result[i] = result[i].mul(cs.namespace(|| "mul"), &x_bits, jubjub_params)?;
-    result[i] = result[i].add(cs.namespace(|| "add"), &a[i], jubjub_params)?;
-  }
+  let result = b
+    .iter()
+    .enumerate()
+    .map(|(i, v)| {
+      let v = v.clone().mul(cs, x, None, rns_params, aux_data)?;
+      let v = v.clone().add(cs, &mut a[i].clone(), rns_params)?;
+
+      Ok(v)
+    })
+    .collect::<Result<Vec<_>, SynthesisError>>()?;
 
   Ok(result)
 }
 
-pub fn multi_scalar<'a, E: JubjubEngine, CS: ConstraintSystem<E>>(
+pub fn multi_scalar<
+  'a,
+  E: Engine,
+  CS: ConstraintSystem<E>,
+  WP: WrappedAffinePoint<'a, E>,
+  AD: AuxData<E>,
+>(
   cs: &mut CS,
-  points: &[EdwardsPoint<E>],
+  points: &[WP],
   scalars: &[AllocatedNum<E>],
-  jubjub_params: &E::Params,
-) -> Result<EdwardsPoint<E>, SynthesisError> {
-  let wrapped_result_x: AllocatedNum<E> = AllocatedNum::zero(cs.namespace(|| "zero"))?;
-  let wrapped_result_y: AllocatedNum<E> = AllocatedNum::zero(cs.namespace(|| "zero"))?;
-  let mut wrapped_result: EdwardsPoint<E> = EdwardsPoint::interpret(
-    cs.namespace(|| "wrapped_result"),
-    &wrapped_result_x,
-    &wrapped_result_y,
-    &jubjub_params,
-  )?; // E::G1Affine::one()
+  rns_params: &'a BaseRnsParameters<E>,
+  aux_data: &AD,
+) -> Result<WP, SynthesisError> {
+  let mut wrapped_result = WP::zero(&rns_params);
   for i in 0..points.len() {
-    let scalar_i_bits = scalars[i].into_bits_le(cs.namespace(|| "into_bits_le"))?;
-    let mut tmp = points[i].mul(
-      cs.namespace(|| "multiply points_i by scalar_i"),
-      &scalar_i_bits,
-      jubjub_params,
-    )?; // tmp = points[i] * scalars[i]
-    wrapped_result = wrapped_result.add(
-      cs.namespace(|| "add wrapped_result to tmp"),
-      &mut tmp,
-      jubjub_params,
-    )?;
-    // result += tmp
+    let mut tmp = points[i]
+      .clone()
+      .mul(cs, &scalars[i], None, rns_params, aux_data)?; // tmp = points[i] * scalars[i]
+    wrapped_result = wrapped_result.add(cs, &mut tmp, rns_params)?; // result += tmp
   }
 
   Ok(wrapped_result)
@@ -129,12 +137,19 @@ pub fn multi_scalar<'a, E: JubjubEngine, CS: ConstraintSystem<E>>(
 
 // Commits to a polynomial using the input group elements
 // panics if the number of group elements does not equal the number of polynomial coefficients
-pub fn commit<'a, E: JubjubEngine, CS: ConstraintSystem<E>>(
+pub fn commit<
+  'a,
+  E: Engine,
+  CS: ConstraintSystem<E>,
+  WP: WrappedAffinePoint<'a, E>,
+  AD: AuxData<E>,
+>(
   cs: &mut CS,
-  group_elements: &[EdwardsPoint<E>],
+  group_elements: &[WP],
   polynomial: &[AllocatedNum<E>],
-  jubjub_params: &E::Params,
-) -> Result<EdwardsPoint<E>, SynthesisError> {
+  rns_params: &'a BaseRnsParameters<E>,
+  aux_data: &AD,
+) -> Result<WP, SynthesisError> {
   if group_elements.len() != polynomial.len() {
     let error = format!(
       "diff sizes, {} != {}",
@@ -144,7 +159,7 @@ pub fn commit<'a, E: JubjubEngine, CS: ConstraintSystem<E>>(
     return Err(Error::new(ErrorKind::InvalidData, error).into());
   }
 
-  let result = multi_scalar::<E, CS>(cs, group_elements, polynomial, jubjub_params)?;
+  let result = multi_scalar::<E, CS, WP, AD>(cs, group_elements, polynomial, rns_params, aux_data)?;
 
   Ok(result)
 }

@@ -1,8 +1,9 @@
 use std::io::{Error, ErrorKind};
 
-use franklin_crypto::bellman::{ConstraintSystem, Field, PrimeField, SynthesisError};
-use franklin_crypto::circuit::num::AllocatedNum;
-use franklin_crypto::jubjub::JubjubEngine;
+use franklin_crypto::bellman::plonk::better_better_cs::cs::ConstraintSystem;
+use franklin_crypto::bellman::{Engine, PrimeField, SynthesisError};
+use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
+// use franklin_crypto::jubjub::JubjubEngine;
 
 use super::utils::read_point_le;
 
@@ -100,59 +101,46 @@ impl<F: PrimeField> PrecomputedWeights<F> {
 // is equal to p(z)
 // Note that `z` should not be in the domain
 // This can also be seen as the lagrange coefficients L_i(point)
-pub fn compute_barycentric_coefficients<E: JubjubEngine, CS: ConstraintSystem<E>>(
-  mut cs: CS,
+pub fn compute_barycentric_coefficients<E: Engine, CS: ConstraintSystem<E>>(
+  cs: &mut CS,
   precomputed_weights: &PrecomputedWeights<E::Fr>,
   point: &AllocatedNum<E>,
 ) -> Result<Vec<AllocatedNum<E>>, SynthesisError> {
   // Compute A(x_i) * point - x_i
   let mut lagrange_evals: Vec<AllocatedNum<E>> = Vec::with_capacity(DOMAIN_SIZE);
   for i in 0..DOMAIN_SIZE {
-    let weight = AllocatedNum::alloc(cs.namespace(|| "alloc weight"), || {
-      Ok(precomputed_weights.barycentric_weights[i])
-    })?;
-    let wrapped_i = AllocatedNum::alloc(cs.namespace(|| "alloc i"), || {
-      Ok(read_point_le(&i.to_le_bytes()).unwrap())
-    })?;
+    let weight = AllocatedNum::alloc(cs, || Ok(precomputed_weights.barycentric_weights[i]))?;
+    let wrapped_i = AllocatedNum::alloc(cs, || Ok(read_point_le(&i.to_le_bytes()).unwrap()))?;
     let mut eval = point.clone();
-    eval = eval.sub(cs.namespace(|| "sub eval to i"), &wrapped_i)?;
-    eval = eval.mul(cs.namespace(|| "multiply eval by weight"), &weight)?;
+    eval = eval.sub(cs, &wrapped_i)?;
+    eval = eval.mul(cs, &weight)?;
     lagrange_evals.push(eval);
   }
 
-  let mut total_prod = AllocatedNum::one::<CS>();
+  let mut total_prod = AllocatedNum::one::<CS>(cs);
   for i in 0..DOMAIN_SIZE {
-    let wrapped_i = AllocatedNum::alloc(cs.namespace(|| "alloc i"), || {
-      Ok(read_point_le(&i.to_le_bytes()).unwrap())
-    })?;
+    let wrapped_i = AllocatedNum::alloc(cs, || Ok(read_point_le(&i.to_le_bytes()).unwrap()))?;
     let mut tmp = point.clone();
-    tmp = tmp.sub(cs.namespace(|| "sub tmp to i"), &wrapped_i)?;
-    total_prod = total_prod.mul(cs.namespace(|| "multiply total_prod by tmp"), &tmp)?;
+    tmp = tmp.sub(cs, &wrapped_i)?;
+    total_prod = total_prod.mul(cs, &tmp)?;
   }
-
-  let mut minus_one = E::Fr::one();
-  minus_one.negate();
 
   for i in 0..DOMAIN_SIZE {
     // TODO: there was no batch inversion API.
     // TODO: once we fully switch over to bandersnatch
     // TODO: we can switch to batch invert API
 
-    lagrange_evals[i] =
-      lagrange_evals[i].pow(cs.namespace(|| "inverse lagrange_evals[i]"), &minus_one)?;
-    lagrange_evals[i] = lagrange_evals[i].mul(
-      cs.namespace(|| "multiply lagrange_evals[i] by total_prod"),
-      &total_prod,
-    )?;
+    lagrange_evals[i] = lagrange_evals[i].inverse(cs)?;
+    lagrange_evals[i] = lagrange_evals[i].mul(cs, &total_prod)?;
   }
 
   Ok(lagrange_evals)
 }
 
 #[derive(Clone)]
-pub struct IpaConfig<E: JubjubEngine> {
-  pub srs: Vec<(E::Fr, E::Fr)>,
-  pub q: (E::Fr, E::Fr),
+pub struct IpaConfig<E: Engine> {
+  pub srs: Vec<E::G1Affine>,
+  pub q: E::G1Affine,
   pub precomputed_weights: PrecomputedWeights<E::Fr>,
   pub num_ipa_rounds: usize,
 }

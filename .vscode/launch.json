@@ -67,7 +67,26 @@
           "kind": "bin"
         }
       },
-      "args": ["test_ipa_circuit"],
+      "args": ["test_discrete_log_circuit"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'test_poseidon_circuit'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=verkle-circuit",
+          "--package=verkle-circuit"
+        ],
+        "filter": {
+          "name": "verkle-circuit",
+          "kind": "bin"
+        }
+      },
+      "args": ["test_poseidon_circuit"],
       "cwd": "${workspaceFolder}"
     }
   ]

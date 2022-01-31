@@ -1090,6 +1090,7 @@ name = "verkle-circuit"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bit-vec",
  "blake2s_simd 1.0.0",
  "byteorder",
  "bytes",
