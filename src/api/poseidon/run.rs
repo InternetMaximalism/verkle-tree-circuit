@@ -30,39 +30,61 @@ use rand::{self, Rng};
 use crate::circuit::ipa2::utils::{read_point_be, read_point_le};
 use crate::circuit::poseidon::PoseidonCircuit;
 
-use super::input::CircuitInput;
+// use super::input::CircuitInput;
 // use super::prover::ProvingAssignment;
 // use super::source::DensityTracker;
 
 #[test]
-fn test_poseidon_circuit() -> Result<(), Box<dyn std::error::Error>> {
+fn test_fr_poseidon_circuit1() -> Result<(), Box<dyn std::error::Error>> {
   // use std::path::Path;
 
   // let pk_path = Path::new("./tests/ipa/proving_key");
   // let vk_path = Path::new("./tests/ipa/verifying_key");
-  run().unwrap();
+
+  let input1 = read_point_le::<Fr>(&[1]).unwrap();
+  let input2 = read_point_le::<Fr>(&[2]).unwrap();
+  let inputs = vec![input1, input2];
+  let output = read_point_le::<Fr>(&[
+    251, 230, 185, 64, 12, 136, 124, 164, 37, 71, 120, 65, 234, 225, 30, 7, 157, 148, 169, 225,
+    186, 183, 76, 63, 231, 241, 40, 189, 50, 55, 145, 23,
+  ])
+  .unwrap();
+  run(inputs, output).unwrap();
 
   Ok(())
 }
 
-pub fn run() -> anyhow::Result<()> {
+#[test]
+fn test_fr_poseidon_circuit2() -> Result<(), Box<dyn std::error::Error>> {
+  // use std::path::Path;
+
+  // let pk_path = Path::new("./tests/ipa/proving_key");
+  // let vk_path = Path::new("./tests/ipa/verifying_key");
+
+  let mut minus_one = Fr::one();
+  minus_one.negate();
+  let input1 = minus_one.clone();
+  let input2 = minus_one.clone();
+  let inputs = vec![input1, input2];
+  let output = read_point_le::<Fr>(&[
+    139, 216, 105, 49, 182, 238, 242, 238, 71, 120, 119, 185, 65, 172, 205, 105, 49, 66, 1, 26,
+    106, 254, 169, 52, 165, 244, 248, 195, 74, 157, 173, 1,
+  ])
+  .unwrap();
+  run(inputs, output).unwrap();
+
+  Ok(())
+}
+
+pub fn run(inputs: Vec<Fr>, output: Fr) -> anyhow::Result<()> {
   println!("setup");
   // let dummy_circuit = PoseidonCircuit::<Bn256> {
   //   inputs: vec![None, None],
   //   output: None,
   // };
 
-  let point1 = read_point_le::<Fr>(&[1]).unwrap();
-  let point2 = read_point_le::<Fr>(&[2]).unwrap();
-  let inputs = vec![Some(point1), Some(point2)];
-  let output = Some(
-    read_point_le::<Fr>(&[
-      122, 176, 229, 184, 0, 106, 92, 105, 52, 32, 239, 76, 185, 0, 161, 222, 221, 131, 31, 151,
-      70, 90, 168, 249, 232, 221, 240, 148, 67, 227, 101,
-    ])
-    .unwrap(),
-  );
-
+  let inputs = inputs.iter().map(|&x| Some(x)).collect::<Vec<_>>();
+  let output = Some(output);
   let circuit = PoseidonCircuit::<Bn256> { inputs, output };
 
   println!("Checking if satisfied");
@@ -74,7 +96,7 @@ pub fn run() -> anyhow::Result<()> {
 
   assert!(is_satisfied, "unsatisfied constraints");
 
-  use franklin_crypto::bellman::plonk::commitments::transcript::keccak_transcript::RollingKeccakTranscript;
+  // use franklin_crypto::bellman::plonk::commitments::transcript::keccak_transcript::RollingKeccakTranscript;
 
   let mut assembly =
     ProvingAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
