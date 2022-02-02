@@ -8,11 +8,10 @@ use std::io::{Error, ErrorKind};
 
 use franklin_crypto::bellman::pairing::Engine;
 use franklin_crypto::bellman::plonk::better_better_cs::cs::{
-  Circuit, ConstraintSystem, Gate, GateInternal, MainGate, Width4MainGateWithDNext,
+  Circuit, ConstraintSystem, Gate, GateInternal, Width4MainGateWithDNext,
 };
 use franklin_crypto::bellman::{Field, SynthesisError};
 use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
-use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::AuxData;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::WrappedAffinePoint;
 
@@ -44,7 +43,7 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
   fn declare_used_gates() -> Result<Vec<Box<dyn GateInternal<E>>>, SynthesisError> {
     Ok(vec![
       Self::MainGate::default().into_internal(),
-      TwoBitDecompositionRangecheckCustomGate::default().into_internal(),
+      // TwoBitDecompositionRangecheckCustomGate::default().into_internal(),
     ])
   }
 

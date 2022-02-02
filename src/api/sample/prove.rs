@@ -29,7 +29,7 @@ pub fn create_random_proof_with_file(
   let public_wires_bytes = vec![];
   let mut writer = std::io::Cursor::new(public_wires_bytes);
   for public_wire in public_wires {
-    write_point_le(&mut writer, public_wire)?;
+    write_point_le(public_wire, &mut writer)?;
   }
   let public_wires_bytes = writer.into_inner();
   let mut public_wires_file = OpenOptions::new()

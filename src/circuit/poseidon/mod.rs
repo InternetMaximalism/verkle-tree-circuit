@@ -5,25 +5,35 @@ use franklin_crypto::bellman::plonk::better_better_cs::cs::{
 use franklin_crypto::bellman::SynthesisError;
 use franklin_crypto::circuit::Assignment;
 use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
-use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
+use generic_array::{typenum::*, ArrayLength, GenericArray};
+// use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
 
 use crate::circuit::ipa2::utils::read_point_le;
 
 use super::ipa2::utils::read_point_be;
 
-#[derive(Clone)]
-pub struct PoseidonCircuit<E: Engine> {
-  pub inputs: Vec<Option<E::Fr>>,
+/// This is the circuit implementation of the Poseidon hash function.
+/// * `width` is also known as the parameter `t`.
+/// The default width is 2 (N = U2).
+/// * The length of `inputs` must be `width - 1`.
+/// * `output` must be the Poseidon hash of `inputs`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PoseidonCircuit<E, N = U2>
+where
+  E: Engine,
+  N: ArrayLength<Option<E::Fr>>,
+{
+  pub inputs: GenericArray<Option<E::Fr>, N>, // [Option<E::Fr>; N::to_usize()]
   pub output: Option<E::Fr>,
 }
 
-impl<E: Engine> Circuit<E> for PoseidonCircuit<E> {
+impl<E: Engine, N: ArrayLength<Option<E::Fr>>> Circuit<E> for PoseidonCircuit<E, N> {
   type MainGate = Width4MainGateWithDNext;
 
   fn declare_used_gates() -> Result<Vec<Box<dyn GateInternal<E>>>, SynthesisError> {
     Ok(vec![
       Self::MainGate::default().into_internal(),
-      TwoBitDecompositionRangecheckCustomGate::default().into_internal(),
+      // TwoBitDecompositionRangecheckCustomGate::default().into_internal(),
     ])
   }
 
@@ -31,8 +41,7 @@ impl<E: Engine> Circuit<E> for PoseidonCircuit<E> {
   where
     CS: ConstraintSystem<E>,
   {
-    let t = self.inputs.len() + 1;
-    assert_eq!(t, T, "invalid inputs length");
+    assert_eq!(self.inputs.len(), N::to_usize(), "invalid inputs length");
 
     let inputs = self
       .inputs
@@ -40,9 +49,7 @@ impl<E: Engine> Circuit<E> for PoseidonCircuit<E> {
       .map(|x| AllocatedNum::alloc(cs, || Ok(*x.get()?)))
       .collect::<Result<Vec<_>, SynthesisError>>()?;
     let result = calc_poseidon(cs, &inputs)?;
-    println!("result: {:?}", result.get_value().unwrap());
     let output = AllocatedNum::alloc_input(cs, || Ok(*self.output.get()?))?;
-    println!("output: {:?}", output.get_value().unwrap());
     result.sub(cs, &output)?.assert_is_zero(cs)?;
 
     Ok(())
