@@ -2,7 +2,7 @@ use franklin_crypto::bellman::{ConstraintSystem, SynthesisError};
 use franklin_crypto::circuit::num::AllocatedNum;
 use franklin_crypto::jubjub::JubjubEngine;
 
-use crate::circuit::utils::read_point_be;
+use verkle_tree::ipa::utils::read_point_be;
 
 pub trait Transcript<E: JubjubEngine>: Sized + Clone {
     fn new(init_state: Option<E::Fr>) -> Self;
@@ -40,9 +40,7 @@ impl<E: JubjubEngine> Transcript<E> for WrappedTranscript<E> {
         cs: &mut CS,
         element: &Option<E::Fr>,
     ) -> Result<(), SynthesisError> {
-        let mut inputs = vec![];
-        inputs.push(self.state);
-        inputs.push(element.clone());
+        let inputs = vec![self.state, *element];
         let mut poseidon_circuit: PoseidonCircuit<E> = PoseidonCircuit {
             inputs,
             output: None,
@@ -55,9 +53,7 @@ impl<E: JubjubEngine> Transcript<E> for WrappedTranscript<E> {
     }
 
     fn get_challenge(&mut self) -> Option<E::Fr> {
-        let challenge = self.state.clone();
-
-        challenge
+        self.state
     }
 }
 
@@ -151,8 +147,7 @@ impl<E: JubjubEngine> ArkCircuit<E> {
                     Ok(self.inputs[i].unwrap())
                     // self.inputs[i].ok_or(SynthesisError::UnconstrainedVariable)
                 })?;
-            let reader = &mut std::io::Cursor::new(hex::decode(&C[i + self.round][2..]).unwrap());
-            let c: E::Fr = read_point_be(reader).unwrap();
+            let c = read_point_be::<E::Fr>(&hex::decode(&C[i + self.round][2..]).unwrap()).unwrap();
             let output_i =
                 inputs_i.add_constant(cs.namespace(|| format!("add inputs[{}] to c", i)), c)?;
             self.outputs[i] = output_i.get_value();
@@ -187,9 +182,8 @@ impl<E: JubjubEngine> MixCircuit<E> {
         let zero = AllocatedNum::zero(cs.namespace(|| "allocate zero"))?;
         for i in 0..self.width {
             let mut lc = zero.clone();
-            for j in 0..self.width {
-                let reader = &mut std::io::Cursor::new(hex::decode(&M[j][i][2..]).unwrap());
-                let m = read_point_be::<E::Fr, _>(reader).unwrap();
+            for (j, inputs_j) in self.inputs.iter().enumerate() {
+                let m = read_point_be::<E::Fr>(&hex::decode(&M[j][i][2..]).unwrap()).unwrap();
                 let wrapped_m = AllocatedNum::alloc(
                     cs.namespace(|| format!("allocate M[{}][{}]", j, i)),
                     || Ok(m),
@@ -197,7 +191,7 @@ impl<E: JubjubEngine> MixCircuit<E> {
                 let inputs_j = AllocatedNum::alloc(
                     cs.namespace(|| format!("allocate inputs[{}][{}]", j, i)),
                     || {
-                        Ok(self.inputs[j].unwrap())
+                        Ok(inputs_j.unwrap())
                         // self.inputs[j].ok_or(SynthesisError::UnconstrainedVariable)
                     },
                 )?; // TODO: uncheck
@@ -269,8 +263,8 @@ impl<E: JubjubEngine> PoseidonCircuit<E> {
         let zero = AllocatedNum::zero(cs.namespace(|| "allocate zero"))?;
         for i in 0..(N_ROUNDS_F + N_ROUNDS_P - 1) {
             ark.push(ArkCircuit::with_capacity(self.width, self.width * i));
-            for j in 0..self.width {
-                ark[i].inputs[j] = if i == 0 {
+            for (j, ark_i_inputs_j) in ark[i].inputs.iter_mut().enumerate() {
+                let tmp = if i == 0 {
                     // ark[0].inputs[j] = j < input_num ? inputs[j] : 0;
                     if j < input_num {
                         wrapped_inputs[j].get_value()
@@ -295,11 +289,24 @@ impl<E: JubjubEngine> PoseidonCircuit<E> {
                     )?;
                     input_j.get_value()
                 };
+                let _ = std::mem::replace(ark_i_inputs_j, tmp);
             }
             ark[i].run(cs.namespace(|| format!("ark[{}]", i)))?;
 
             last_mix = MixCircuit::with_capacity(self.width); // current_mix
-            if i < N_ROUNDS_F / 2 || i >= N_ROUNDS_P + N_ROUNDS_F / 2 {
+            if ((N_ROUNDS_F / 2)..(N_ROUNDS_F / 2 + N_ROUNDS_P)).contains(&i) {
+                let k = i - N_ROUNDS_F / 2; // unnecessary
+                let mut sigma_p_k = SigmaCircuit::default();
+                sigma_p_k.input = ark[i].outputs[0];
+                sigma_p_k
+                    .run(cs.namespace(|| format!("sigma_p[{}]", k)))
+                    .unwrap();
+                last_mix.inputs[0] = sigma_p_k.output;
+                sigma_p.push(sigma_p_k); // unnecessary
+                for j in 1..T {
+                    last_mix.inputs[j] = ark[i].outputs[j];
+                }
+            } else {
                 let k = if i < N_ROUNDS_F / 2 {
                     i
                 } else {
@@ -314,28 +321,16 @@ impl<E: JubjubEngine> PoseidonCircuit<E> {
                     last_mix.inputs[j] = sigma_f_k_j.output;
                     sigma_f[k].push(sigma_f_k_j); // unnecessary
                 }
-            } else {
-                let k = i - N_ROUNDS_F / 2; // unnecessary
-                let mut sigma_p_k = SigmaCircuit::default();
-                sigma_p_k.input = ark[i].outputs[0];
-                sigma_p_k
-                    .run(cs.namespace(|| format!("sigma_p[{}]", k)))
-                    .unwrap();
-                last_mix.inputs[0] = sigma_p_k.output;
-                sigma_p.push(sigma_p_k); // unnecessary
-                for j in 1..T {
-                    last_mix.inputs[j] = ark[i].outputs[j];
-                }
             }
             last_mix.run(cs.namespace(|| format!("mix[{}]", i)))?;
         }
 
         // last round is done only for the first word, so we do it manually to save constraints
         let mut last_sigma_f = SigmaCircuit::default();
-        let reader = &mut std::io::Cursor::new(
-            hex::decode(&C[self.width * (N_ROUNDS_F + N_ROUNDS_P - 1)][2..]).unwrap(),
-        );
-        let c = read_point_be::<E::Fr, _>(reader).unwrap();
+        let c = read_point_be::<E::Fr>(
+            &hex::decode(&C[self.width * (N_ROUNDS_F + N_ROUNDS_P - 1)][2..]).unwrap(),
+        )
+        .unwrap();
         let output_0 = AllocatedNum::alloc(
             cs.namespace(|| format!("allocate mix[{}].outputs[0]", N_ROUNDS_F + N_ROUNDS_P - 1)),
             || {

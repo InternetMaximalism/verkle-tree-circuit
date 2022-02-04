@@ -7,11 +7,7 @@ use franklin_crypto::bellman::SynthesisError;
 use franklin_crypto::circuit::Assignment;
 use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
 use generic_array::{typenum::*, ArrayLength, GenericArray};
-// use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
-
-use crate::circuit::ipa_fr::utils::read_point_le;
-
-use super::ipa_fr::utils::read_point_be;
+use verkle_tree::ipa_fr::utils::{read_point_be, read_point_le};
 
 /// This is the circuit implementation of the Poseidon hash function.
 /// * `width` is also known as the parameter `t`.
@@ -138,7 +134,7 @@ where
     let zero = AllocatedNum::zero(cs);
 
     for i in 0..T {
-        let mut lc = zero.clone();
+        let mut lc = zero;
         for j in 0..T {
             let m_reader = hex::decode(&m[j][i][2..]).unwrap();
             let wrapped_m =
@@ -205,14 +201,16 @@ where
 
     let half_full_rounds = N_ROUNDS_F / 2;
     for i in 0..(N_ROUNDS_F + N_ROUNDS_P) {
-        for j in 0..T {
-            elements[j] = add_round_constant(cs, elements[j], j + T * i)?;
+        for (j, e) in elements.iter_mut().enumerate() {
+            let tmp = add_round_constant(cs, *e, j + T * i)?;
+            let _ = std::mem::replace(e, tmp);
         }
 
         if i < half_full_rounds || i >= half_full_rounds + N_ROUNDS_P {
             // full round
-            for j in 0..T {
-                elements[j] = calc_sigma(cs, elements[j])?;
+            for e in elements.iter_mut() {
+                let tmp = calc_sigma(cs, *e)?;
+                let _ = std::mem::replace(e, tmp);
             }
         } else {
             // partial round

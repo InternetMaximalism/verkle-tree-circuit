@@ -68,7 +68,7 @@ pub fn generate_random_parameters_with_file(
         proof: OptionIpaProof::with_depth(ipa_conf.num_ipa_rounds),
         eval_point: None,
         inner_prod: None,
-        ipa_conf: ipa_conf.clone(),
+        ipa_conf,
         jubjub_params: &jubjub_params,
     };
 

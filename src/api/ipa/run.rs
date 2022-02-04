@@ -95,7 +95,7 @@ pub fn run(circuit_input: CircuitInput) -> anyhow::Result<()> {
         proof: OptionIpaProof::<Bn256>::from(circuit_input.proof.unwrap()),
         eval_point: circuit_input.eval_point,
         inner_prod: circuit_input.inner_prod,
-        ipa_conf: ipa_conf.clone(),
+        ipa_conf,
         jubjub_params: &jubjub_params,
     };
 

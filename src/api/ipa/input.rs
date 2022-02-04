@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::{fs::read_to_string, path::Path};
 
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -14,15 +15,19 @@ pub struct CircuitInput {
     pub inner_prod: Option<Fr>,
 }
 
+impl FromStr for CircuitInput {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> anyhow::Result<Self> {
+        Self::from_bytes(s.as_bytes())
+    }
+}
+
 impl CircuitInput {
     pub fn from_path(path: &Path) -> anyhow::Result<Self> {
         let json_str = read_to_string(path)?;
 
         Self::from_str(&json_str)
-    }
-
-    pub fn from_str(s: &str) -> anyhow::Result<Self> {
-        Self::from_bytes(s.as_bytes())
     }
 
     pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {

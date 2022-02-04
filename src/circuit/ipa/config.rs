@@ -4,7 +4,7 @@ use franklin_crypto::bellman::{ConstraintSystem, Field, PrimeField, SynthesisErr
 use franklin_crypto::circuit::num::AllocatedNum;
 use franklin_crypto::jubjub::JubjubEngine;
 
-use super::utils::read_point_le;
+use verkle_tree::ipa::utils::read_point_le;
 
 #[derive(Clone, Debug)]
 pub struct PrecomputedWeights<F: PrimeField> {
@@ -84,8 +84,8 @@ impl<F: PrimeField> PrecomputedWeights<F> {
                 continue;
             }
 
-            let mut tmp = F::from_repr(<F::Repr as From<u64>>::from(element.try_into()?))?; // tmp = element
-            let i_fr = F::from_repr(<F::Repr as From<u64>>::from(i.try_into()?))?;
+            let mut tmp = F::from_repr(<F::Repr as From<u64>>::from(element))?; // tmp = element
+            let i_fr = F::from_repr(<F::Repr as From<u64>>::from(i))?;
             tmp.sub_assign(&i_fr); // tmp -= i
             total.mul_assign(&tmp); // total *= tmp
         }
@@ -132,17 +132,19 @@ pub fn compute_barycentric_coefficients<E: JubjubEngine, CS: ConstraintSystem<E>
     let mut minus_one = E::Fr::one();
     minus_one.negate();
 
-    for i in 0..DOMAIN_SIZE {
+    for eval in lagrange_evals.iter_mut() {
         // TODO: there was no batch inversion API.
         // TODO: once we fully switch over to bandersnatch
         // TODO: we can switch to batch invert API
 
-        lagrange_evals[i] =
-            lagrange_evals[i].pow(cs.namespace(|| "inverse lagrange_evals[i]"), &minus_one)?;
-        lagrange_evals[i] = lagrange_evals[i].mul(
+        let tmp: AllocatedNum<E> =
+            eval.pow(cs.namespace(|| "inverse lagrange_evals[i]"), &minus_one)?;
+        let tmp = tmp.mul(
             cs.namespace(|| "multiply lagrange_evals[i] by total_prod"),
             &total_prod,
         )?;
+
+        let _ = std::mem::replace(eval, tmp);
     }
 
     Ok(lagrange_evals)

@@ -75,7 +75,7 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
         //   &wrapped_base_point_y,
         //   &self.jubjub_params,
         // )?;
-        let commitment = WP::alloc(cs, self.commitment.clone(), self.rns_params, &self.aux_data)?;
+        let mut commitment = WP::alloc(cs, self.commitment, self.rns_params, &self.aux_data)?;
 
         // let bit_limit = None; // Some(256usize);
         let mut b =
@@ -94,26 +94,17 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
         transcript.commit_alloc_num(cs, inner_prod)?; // output point
 
         let w = transcript.get_challenge();
-        let q = WP::alloc(
-            cs,
-            Some(self.ipa_conf.q.clone()),
-            self.rns_params,
-            &self.aux_data,
-        )?;
+        let mut q = WP::alloc(cs, Some(self.ipa_conf.q), self.rns_params, &self.aux_data)?;
         // let w_bits = w.into_bits_le_fixed(
         //   cs.namespace(|| "Get S bits"),
         //   <E::Fs as PrimeField>::NUM_BITS as usize,
         // )?;
-        let mut qw = q
-            .clone()
-            .mul(cs, &w, None, self.rns_params, &self.aux_data)?;
+        let mut qw = q.mul(cs, &w, None, self.rns_params, &self.aux_data)?;
 
-        let qy = qw
+        let mut qy = qw
             .clone()
             .mul(cs, &inner_prod, None, self.rns_params, &self.aux_data)?;
-        let mut commitment = commitment
-            .clone()
-            .add(cs, &mut qy.clone(), self.rns_params)?;
+        commitment = commitment.add(cs, &mut qy, self.rns_params)?;
 
         let challenges = generate_challenges::<_, _, WP, _>(
             cs,
@@ -134,13 +125,13 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
             let mut minus_one = E::Fr::one();
             minus_one.negate();
             let x_inv = x.inverse(cs)?;
-            challenges_inv.push(x_inv.clone());
+            challenges_inv.push(x_inv);
 
             let one = AllocatedNum::one(cs);
             commitment = commit(
                 cs,
                 &[commitment, l, r],
-                &[one, x.clone(), x_inv],
+                &[one, *x, x_inv],
                 self.rns_params,
                 &self.aux_data,
             )?;
@@ -152,7 +143,7 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
             .ipa_conf
             .srs
             .iter()
-            .map(|v| WP::alloc(cs, Some(v.clone()), self.rns_params, &self.aux_data))
+            .map(|v| WP::alloc(cs, Some(*v), self.rns_params, &self.aux_data))
             .collect::<Result<Vec<_>, SynthesisError>>()?;
 
         println!("reduction starts");
@@ -205,13 +196,13 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
         // Compute `result = G[0] * a + (a * b[0]) * Q`.
         let proof_a = AllocatedNum::alloc(cs, || Ok(self.proof.a.unwrap()))?;
         let mut result1 = current_basis[0].clone(); // result1 = G[0]
-        let mut part_2a = b[0].clone(); // part_2a = b[0]
+        let mut part_2a = b[0]; // part_2a = b[0]
 
         // let proof_a_bits = proof_a.into_bits_le(cs)?;
         result1 = result1.mul(cs, &proof_a, None, self.rns_params, &self.aux_data)?; // result1 *= proof_a
         part_2a = part_2a.mul(cs, &proof_a)?; // part_2a *= proof_a
-        let result2 = qw.mul(cs, &part_2a, None, self.rns_params, &self.aux_data)?; // result2 = qw * part_2a
-        let result = result1.add(cs, &mut result2.clone(), self.rns_params)?; // result = result1 + result2
+        let mut result2 = qw.mul(cs, &part_2a, None, self.rns_params, &self.aux_data)?; // result2 = qw * part_2a
+        let result = result1.add(cs, &mut result2, self.rns_params)?; // result = result1 + result2
 
         // Ensure `commitment` is equal to `result`.
         commitment.equals(cs, &result, self.rns_params)?;

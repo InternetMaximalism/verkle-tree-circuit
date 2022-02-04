@@ -9,7 +9,7 @@ use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::Wra
 
 use crate::circuit::poseidon::calc_poseidon;
 
-use super::utils::write_point_le;
+use verkle_tree::ipa_fr::utils::write_point_le;
 
 pub trait Transcript<E: Engine>: Sized + Clone {
     fn new(init_state: AllocatedNum<E>) -> Self;
@@ -47,18 +47,14 @@ impl<E: Engine> Transcript<E> for WrappedTranscript<E> {
         cs: &mut CS,
         element: AllocatedNum<E>,
     ) -> Result<(), SynthesisError> {
-        let mut inputs = vec![];
-        inputs.push(self.state);
-        inputs.push(element.clone());
+        let inputs = vec![self.state, element];
         self.state = calc_poseidon(cs, &inputs)?;
 
         Ok(())
     }
 
     fn get_challenge(&mut self) -> AllocatedNum<E> {
-        let challenge = self.state.clone();
-
-        challenge
+        self.state
     }
 }
 
@@ -112,11 +108,11 @@ impl<E: Engine> WrappedTranscript<E> {
                 .iter()
                 .flat_map(|x| {
                     let mut x_bits = vec![];
-                    let mut y = x.clone();
+                    let mut y = *x;
                     for _ in 0..8 {
                         let a = AllocatedBit::alloc(cs, Some(y % 2 == 1));
                         x_bits.push(a);
-                        y = y >> 1;
+                        y >>= 1;
                     }
 
                     x_bits

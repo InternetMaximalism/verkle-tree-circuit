@@ -36,7 +36,7 @@ pub fn create_random_proof_with_file(
         .write(true)
         .create(true)
         .open(public_wires_path)?;
-    public_wires_file.write(hex::encode(&public_wires_bytes).as_bytes())?;
+    public_wires_file.write_all(hex::encode(&public_wires_bytes).as_bytes())?;
 
     let proof = create_random_proof(circuit, &parameters, &mut rand::thread_rng())?;
     let proof_file = OpenOptions::new()

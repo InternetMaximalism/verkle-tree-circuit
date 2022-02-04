@@ -2,6 +2,7 @@ use std::{
     fs::read_to_string,
     io::{Read, Write},
     path::Path,
+    str::FromStr,
 };
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
@@ -45,18 +46,17 @@ mod poseidon_api_tests {
     use generic_array::typenum;
     use verkle_tree::ff_utils::bn256_fr::Bn256Fr;
     use verkle_tree::ipa_fr::transcript::{convert_ff_ce_to_ff, convert_ff_to_ff_ce};
+    use verkle_tree::ipa_fr::utils::read_point_le;
     use verkle_tree::neptune::poseidon::PoseidonConstants;
     use verkle_tree::neptune::Poseidon;
-
-    use crate::circuit::ipa_fr::utils::read_point_le;
     // use crate::circuit::poseidon::PoseidonCircuit;
 
-    use super::PoseidonCircuitInput;
+    use super::{PoseidonCircuitInput, VkAndProof};
 
     fn make_test_input(inputs: Vec<Fr>) -> PoseidonCircuitInput<typenum::U2> {
         let preimage = inputs
             .iter()
-            .map(|input| convert_ff_ce_to_ff(input.clone()))
+            .map(|input| convert_ff_ce_to_ff(*input))
             .collect::<anyhow::Result<Vec<_>>>()
             .unwrap();
         let constants = PoseidonConstants::new();
@@ -64,13 +64,11 @@ mod poseidon_api_tests {
         let output = convert_ff_to_ff_ce(h.hash()).unwrap();
         println!("output: {:?}", output);
 
-        let circuit_input = PoseidonCircuitInput {
+        PoseidonCircuitInput {
             inputs,
             output,
             _n: std::marker::PhantomData,
-        };
-
-        circuit_input
+        }
     }
 
     fn open_crs_for_log2_of_size(_log2_n: usize) -> Crs<Bn256, CrsForMonomialForm> {
@@ -86,9 +84,8 @@ mod poseidon_api_tests {
 
     fn create_crs_for_log2_of_size(log2_n: usize) -> Crs<Bn256, CrsForMonomialForm> {
         let worker = franklin_crypto::bellman::worker::Worker::new();
-        let crs = Crs::<Bn256, CrsForMonomialForm>::crs_42(1 << log2_n, &worker);
 
-        crs
+        Crs::<Bn256, CrsForMonomialForm>::crs_42(1 << log2_n, &worker)
     }
 
     #[test]
@@ -112,7 +109,7 @@ mod poseidon_api_tests {
         // ])
         // .unwrap();
         let circuit_input = make_test_input(inputs);
-        let (_vk, _proof) = circuit_input.create_plonk_proof(crs)?;
+        let VkAndProof(_vk, _proof) = circuit_input.create_plonk_proof(crs)?;
         let file = OpenOptions::new()
             .write(true)
             .create(true)
@@ -134,8 +131,8 @@ mod poseidon_api_tests {
         let crs = open_crs_for_log2_of_size(12);
         let mut minus_one = Fr::one();
         minus_one.negate();
-        let input1 = minus_one.clone();
-        let input2 = minus_one.clone();
+        let input1 = minus_one;
+        let input2 = minus_one;
         let inputs = vec![input1, input2];
         // let output = read_point_le::<Fr>(&[
         //   139, 216, 105, 49, 182, 238, 242, 238, 71, 120, 119, 185, 65, 172, 205, 105, 49, 66, 1, 26,
@@ -255,6 +252,11 @@ mod poseidon_api_tests {
     }
 }
 
+pub struct VkAndProof<N: ArrayLength<Option<Fr>>>(
+    pub VerificationKey<Bn256, PoseidonCircuit<Bn256, N>>,
+    pub Proof<Bn256, PoseidonCircuit<Bn256, N>>,
+);
+
 impl<N: ArrayLength<Option<Fr>>> PoseidonCircuitInput<N> {
     pub fn new(inputs: Vec<Fr>, output: Fr) -> Self {
         assert_eq!(inputs.len(), N::to_usize());
@@ -281,13 +283,7 @@ impl<N: ArrayLength<Option<Fr>>> PoseidonCircuitInput<N> {
     pub fn create_plonk_proof(
         &self,
         crs: Crs<Bn256, CrsForMonomialForm>,
-    ) -> Result<
-        (
-            VerificationKey<Bn256, PoseidonCircuit<Bn256, N>>,
-            Proof<Bn256, PoseidonCircuit<Bn256, N>>,
-        ),
-        SynthesisError,
-    > {
+    ) -> Result<VkAndProof<N>, SynthesisError> {
         // let dummy_circuit = PoseidonCircuit::<Bn256> {
         //   inputs: inputs.iter().map(|&_| None).collect::<Vec<_>>(),
         //   output: None,
@@ -338,7 +334,9 @@ impl<N: ArrayLength<Option<Fr>>> PoseidonCircuitInput<N> {
             "expected input is not equal to one in a circuit"
         );
 
-        Ok((vk, proof))
+        let result = VkAndProof(vk, proof);
+
+        Ok(result)
     }
 
     /// `[width, input[0], ..., inputs[t - 2], output]` -> `CircuitInput`
@@ -386,8 +384,12 @@ impl<N: ArrayLength<Option<Fr>>> PoseidonCircuitInput<N> {
 
         Self::from_str(&json_str)
     }
+}
 
-    pub fn from_str(s: &str) -> std::io::Result<Self> {
+impl<N: ArrayLength<Option<Fr>>> FromStr for PoseidonCircuitInput<N> {
+    type Err = std::io::Error;
+
+    fn from_str(s: &str) -> std::io::Result<Self> {
         Self::read_from(&mut s.as_bytes())
     }
 }
@@ -426,9 +428,8 @@ impl<N: ArrayLength<Option<Fr>>> Serialize for PoseidonCircuitInput<N> {
         let serializable_output = {
             let writer = &mut vec![];
             write_point_be(self.output, writer).unwrap();
-            let result = "0x".to_string() + &hex::encode(writer);
 
-            result
+            "0x".to_string() + &hex::encode(writer)
         };
 
         let new_self = SerializablePoseidonCircuitInput {

@@ -5,7 +5,7 @@ use franklin_crypto::bellman::{Engine, PrimeField, SynthesisError};
 use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
 // use franklin_crypto::jubjub::JubjubEngine;
 
-use super::utils::read_point_le;
+use verkle_tree::ipa_fr::utils::read_point_le;
 
 #[derive(Clone, Debug)]
 pub struct PrecomputedWeights<F: PrimeField> {
@@ -85,8 +85,8 @@ impl<F: PrimeField> PrecomputedWeights<F> {
                 continue;
             }
 
-            let mut tmp = F::from_repr(<F::Repr as From<u64>>::from(element.try_into()?))?; // tmp = element
-            let i_fr = F::from_repr(<F::Repr as From<u64>>::from(i.try_into()?))?;
+            let mut tmp = F::from_repr(<F::Repr as From<u64>>::from(element))?; // tmp = element
+            let i_fr = F::from_repr(<F::Repr as From<u64>>::from(i))?;
             tmp.sub_assign(&i_fr); // tmp -= i
             total.mul_assign(&tmp); // total *= tmp
         }
@@ -110,7 +110,7 @@ pub fn compute_barycentric_coefficients<E: Engine, CS: ConstraintSystem<E>>(
     for i in 0..DOMAIN_SIZE {
         let weight = AllocatedNum::alloc(cs, || Ok(precomputed_weights.barycentric_weights[i]))?;
         let wrapped_i = AllocatedNum::alloc(cs, || Ok(read_point_le(&i.to_le_bytes()).unwrap()))?;
-        let mut eval = point.clone();
+        let mut eval = *point;
         eval = eval.sub(cs, &wrapped_i)?;
         eval = eval.mul(cs, &weight)?;
         lagrange_evals.push(eval);
@@ -119,18 +119,19 @@ pub fn compute_barycentric_coefficients<E: Engine, CS: ConstraintSystem<E>>(
     let mut total_prod = AllocatedNum::one::<CS>(cs);
     for i in 0..DOMAIN_SIZE {
         let wrapped_i = AllocatedNum::alloc(cs, || Ok(read_point_le(&i.to_le_bytes()).unwrap()))?;
-        let mut tmp = point.clone();
+        let mut tmp = *point;
         tmp = tmp.sub(cs, &wrapped_i)?;
         total_prod = total_prod.mul(cs, &tmp)?;
     }
 
-    for i in 0..DOMAIN_SIZE {
+    for eval in lagrange_evals.iter_mut() {
         // TODO: there was no batch inversion API.
         // TODO: once we fully switch over to bandersnatch
         // TODO: we can switch to batch invert API
 
-        lagrange_evals[i] = lagrange_evals[i].inverse(cs)?;
-        lagrange_evals[i] = lagrange_evals[i].mul(cs, &total_prod)?;
+        let tmp = eval.inverse(cs)?;
+        let tmp = tmp.mul(cs, &total_prod)?;
+        let _ = std::mem::replace(eval, tmp);
     }
 
     Ok(lagrange_evals)

@@ -2,7 +2,7 @@ use std::io::{Error, ErrorKind};
 
 use franklin_crypto::bellman::pairing::Engine;
 use franklin_crypto::bellman::plonk::better_better_cs::cs::ConstraintSystem;
-use franklin_crypto::bellman::{PrimeField, PrimeFieldRepr, SynthesisError};
+use franklin_crypto::bellman::{SynthesisError};
 // use franklin_crypto::circuit::ecc::EdwardsPoint;
 use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::AuxData;
@@ -10,49 +10,6 @@ use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::Wra
 
 use super::rns::BaseRnsParameters;
 // use franklin_crypto::jubjub::JubjubEngine;
-
-pub fn read_point_le<F: PrimeField>(bytes: &[u8]) -> anyhow::Result<F> {
-    let mut padded_bytes = bytes.to_vec();
-    let mut repr = F::Repr::default();
-    let num_bits = F::NUM_BITS as usize;
-    assert!(bytes.len() <= num_bits);
-    for _ in bytes.len()..num_bits {
-        padded_bytes.push(0);
-    }
-    repr.read_le::<&[u8]>(padded_bytes.as_ref())?;
-    let value = F::from_repr(repr)?;
-
-    Ok(value)
-}
-
-pub fn read_point_be<F: PrimeField>(bytes: &[u8]) -> anyhow::Result<F> {
-    let mut padded_bytes = bytes.to_vec();
-    padded_bytes.reverse();
-    read_point_le(&padded_bytes)
-}
-
-pub fn write_point_le<F: PrimeField>(scalar: &F) -> Vec<u8> {
-    let scalar_u64_vec = scalar.into_repr().as_ref().to_vec();
-    let mut result = vec![0; scalar_u64_vec.len() * 8];
-    for (bytes, tmp) in scalar_u64_vec
-        .iter()
-        .map(|x| x.to_le_bytes())
-        .zip(result.chunks_mut(8))
-    {
-        for i in 0..bytes.len() {
-            tmp[i] = bytes[i];
-        }
-    }
-
-    result
-}
-
-pub fn write_point_be<F: PrimeField>(scalar: &F) -> Vec<u8> {
-    let mut result = write_point_le(scalar);
-    result.reverse();
-
-    result
-}
 
 // Computes c[i] = a[i] + b[i] * x
 // returns c
@@ -101,10 +58,10 @@ pub fn fold_points<
         .iter()
         .enumerate()
         .map(|(i, v)| {
-            let v = v.clone().mul(cs, x, None, rns_params, aux_data)?;
-            let v = v.clone().add(cs, &mut a[i].clone(), rns_params)?;
+            let mut tmp = v.clone().mul(cs, x, None, rns_params, aux_data)?;
+            let result = tmp.add(cs, &mut a[i].clone(), rns_params)?;
 
-            Ok(v)
+            Ok(result)
         })
         .collect::<Result<Vec<_>, SynthesisError>>()?;
 
@@ -124,7 +81,7 @@ pub fn multi_scalar<
     rns_params: &'a BaseRnsParameters<E>,
     aux_data: &AD,
 ) -> Result<WP, SynthesisError> {
-    let mut wrapped_result = WP::zero(&rns_params);
+    let mut wrapped_result = WP::zero(rns_params);
     for i in 0..points.len() {
         let mut tmp = points[i]
             .clone()

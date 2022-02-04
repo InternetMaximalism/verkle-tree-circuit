@@ -50,7 +50,7 @@ impl<E: JubjubEngine> From<IpaProof<E>> for OptionIpaProof<E> {
     }
 }
 
-pub fn generate_challenges<'a, E: JubjubEngine, CS: ConstraintSystem<E>, T: Transcript<E>>(
+pub fn generate_challenges<E: JubjubEngine, CS: ConstraintSystem<E>, T: Transcript<E>>(
     cs: &mut CS,
     ipa_proof: &OptionIpaProof<E>,
     transcript: &mut T,

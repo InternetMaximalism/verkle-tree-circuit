@@ -9,9 +9,6 @@ use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr, FrRepr};
 use franklin_crypto::bellman::pairing::Engine;
 // use franklin_crypto::bellman::plonk::commitments::transcript::Blake2sTranscript;
 use franklin_crypto::bellman::{CurveProjective, PrimeField};
-use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::{
-    AuxData, BN256AuxData,
-};
 
 // use franklin_crypto::plonk::circuit::bigint::field::RnsParameters;
 // use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::{
@@ -31,7 +28,6 @@ pub fn generate_random_parameters_with_file(
 ) -> anyhow::Result<()> {
     let num_ipa_rounds = NUM_IPA_ROUNDS; // log_2(DOMAIN_SIZE)
 
-    let aux_data = BN256AuxData::new();
     let jubjub_params = AltJubjubBn256::new();
     // let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
     // let dummy_aux_data = BN256AuxData::new();
@@ -72,7 +68,7 @@ pub fn generate_random_parameters_with_file(
         proof: OptionIpaProof::with_depth(ipa_conf.num_ipa_rounds),
         eval_point: None,
         inner_prod: None,
-        ipa_conf: ipa_conf.clone(),
+        ipa_conf,
         jubjub_params: &jubjub_params,
     };
 

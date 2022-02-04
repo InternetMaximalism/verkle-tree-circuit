@@ -30,6 +30,21 @@ pub struct IpaCircuit<'a, E: JubjubEngine> {
     pub jubjub_params: &'a E::Params,
 }
 
+// #[test]
+// fn test_ipa_circuit() -> Result<(), Box<dyn std::error::Error>> {
+//     use std::path::Path;
+
+//     use crate::api::ipa::setup::generate_random_parameters_with_file;
+
+//     let pk_path = Path::new("./tests/ipa/proving_key");
+//     let vk_path = Path::new("./tests/ipa/verifying_key");
+//     // let size = 2usize.pow(21); // 2097152
+//     // make_crs_with_file::<franklin_crypto::bellman::pairing::bn256::Bn256>(crs_path, size)?;
+//     generate_random_parameters_with_file(pk_path, vk_path)?;
+
+//     Ok(())
+// }
+
 impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
     fn synthesize<CS: ConstraintSystem<E>>(self, cs: &mut CS) -> Result<(), SynthesisError> {
         let mut transcript = WrappedTranscript::new(self.transcript_params);
@@ -72,7 +87,7 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
             cs.namespace(|| "interpret commitment"),
             &commitment_x,
             &commitment_y,
-            &self.jubjub_params,
+            self.jubjub_params,
         )?;
 
         // let bit_limit = None; // Some(256usize);
@@ -110,22 +125,22 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
             cs.namespace(|| "interpret Q"),
             &q_x,
             &q_y,
-            &self.jubjub_params,
+            self.jubjub_params,
         )?;
         let mut qy = q.clone();
         let w_bits = w.into_bits_le(cs.namespace(|| "into_bits_le"))?;
-        q = q.mul(cs.namespace(|| "q_mul_w"), &w_bits, &self.jubjub_params)?;
+        q = q.mul(cs.namespace(|| "q_mul_w"), &w_bits, self.jubjub_params)?;
 
         let inner_prod_bits = inner_prod.into_bits_le(&mut cs.namespace(|| "into_bits_le"))?;
         qy = qy.mul(
             cs.namespace(|| "qy_mul_inner_prod"),
             &inner_prod_bits,
-            &self.jubjub_params,
+            self.jubjub_params,
         )?;
         commitment = commitment.add(
             cs.namespace(|| "add qy to commitment"),
-            &mut qy.clone(),
-            &self.jubjub_params,
+            &qy,
+            self.jubjub_params,
         )?;
 
         let challenges = generate_challenges(
@@ -156,7 +171,7 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
                 cs.namespace(|| "interpret l"),
                 &l_i_x,
                 &l_i_y,
-                &self.jubjub_params,
+                self.jubjub_params,
             )?;
             let r_i_x = AllocatedNum::alloc(cs.namespace(|| "alloc r_i_x"), || {
                 Ok(self.proof.r[i].unwrap().0)
@@ -174,7 +189,7 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
                 cs.namespace(|| "interpret r"),
                 &r_i_x,
                 &r_i_y,
-                &self.jubjub_params,
+                self.jubjub_params,
             )?;
 
             let mut minus_one = E::Fr::one();
@@ -187,7 +202,7 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
                 &mut cs.namespace(|| "commit"),
                 &[commitment, l, r],
                 &[one, x.clone(), x_inv],
-                &self.jubjub_params,
+                self.jubjub_params,
             )?;
         }
 
@@ -204,7 +219,7 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
                     cs.namespace(|| "interpret v"),
                     &v_x,
                     &v_y,
-                    &self.jubjub_params,
+                    self.jubjub_params,
                 )
             })
             .collect::<Result<Vec<_>, SynthesisError>>()?;
@@ -228,7 +243,7 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
             let b_r = b_chunks.next().unwrap().to_vec();
 
             b = fold_scalars::<E, CS>(cs, &b_l, &b_r, x_inv)?;
-            current_basis = fold_points::<E, CS>(cs, &g_l, &g_r, x_inv, &self.jubjub_params)?;
+            current_basis = fold_points::<E, CS>(cs, &g_l, &g_r, x_inv, self.jubjub_params)?;
         }
 
         println!("x_inv: {}/{}", challenges_inv.len(), challenges_inv.len());
@@ -260,7 +275,7 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
         result1 = result1.mul(
             cs.namespace(|| "alloc proof_a"),
             &proof_a_bits,
-            &self.jubjub_params,
+            self.jubjub_params,
         )?; // result1 *= proof_a
 
         part_2a = part_2a.mul(cs.namespace(|| "multiply part_2a by proof_a"), &proof_a)?; // part_2a *= proof_a
@@ -268,25 +283,25 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
         let result2 = q.mul(
             cs.namespace(|| "multiply q by part_2a_bits"),
             &part_2a_bits,
-            &self.jubjub_params,
+            self.jubjub_params,
         )?; // q *= part_2a
 
         let result = result1.add(
             cs.namespace(|| "add result1 to result2"),
             &result2,
-            &self.jubjub_params,
+            self.jubjub_params,
         )?; // result = result1 + result2
 
         // Ensure `commitment` is equal to `result`.
         AllocatedNum::equals(
             cs.namespace(|| "ensure commitment_x is equal to result_y"),
-            &commitment.get_x(),
-            &result.get_x(),
+            commitment.get_x(),
+            result.get_x(),
         )?;
         AllocatedNum::equals(
             cs.namespace(|| "ensure commitment_y is equal to result_y"),
-            &commitment.get_y(),
-            &result.get_y(),
+            commitment.get_y(),
+            result.get_y(),
         )?;
 
         println!(

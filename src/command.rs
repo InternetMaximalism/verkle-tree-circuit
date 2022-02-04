@@ -16,14 +16,14 @@ struct Cli {
 #[derive(Debug, StructOpt)]
 enum SubCommand {
     #[structopt(name = "setup")]
-    SetupOption {
+    Setup {
         #[structopt(parse(from_os_str))]
         pk_path: PathBuf,
         #[structopt(parse(from_os_str))]
         vk_path: PathBuf,
     },
     #[structopt(name = "prove")]
-    ProveOption {
+    Prove {
         #[structopt(parse(from_os_str))]
         pk_path: PathBuf,
         #[structopt(parse(from_os_str))]
@@ -34,7 +34,7 @@ enum SubCommand {
         public_wires_path: PathBuf,
     },
     #[structopt(name = "verify")]
-    VerifyOption {
+    Verify {
         #[structopt(parse(from_os_str))]
         vk_path: PathBuf,
         #[structopt(parse(from_os_str))]
@@ -46,11 +46,11 @@ enum SubCommand {
 
 pub fn invoke_command() -> anyhow::Result<()> {
     match Cli::from_args().subcommand {
-        SubCommand::SetupOption { pk_path, vk_path } => {
+        SubCommand::Setup { pk_path, vk_path } => {
             // crate::api::ipa::setup::generate_random_parameters_with_file(&pk_path, &vk_path)?;
             generate_random_parameters_with_file(&pk_path, &vk_path)?;
         }
-        SubCommand::ProveOption {
+        SubCommand::Prove {
             pk_path,
             input_path,
             proof_path,
@@ -58,7 +58,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
         } => {
             create_random_proof_with_file(&pk_path, &input_path, &proof_path, &public_wires_path)?;
         }
-        SubCommand::VerifyOption {
+        SubCommand::Verify {
             vk_path,
             proof_path,
             public_wires_path,
