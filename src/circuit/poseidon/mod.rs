@@ -9,9 +9,9 @@ use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
 use generic_array::{typenum::*, ArrayLength, GenericArray};
 // use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
 
-use crate::circuit::ipa2::utils::read_point_le;
+use crate::circuit::ipa_fr::utils::read_point_le;
 
-use super::ipa2::utils::read_point_be;
+use super::ipa_fr::utils::read_point_be;
 
 /// This is the circuit implementation of the Poseidon hash function.
 /// * `width` is also known as the parameter `t`.

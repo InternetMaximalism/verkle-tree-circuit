@@ -48,7 +48,7 @@ mod poseidon_api_tests {
     use verkle_tree::neptune::poseidon::PoseidonConstants;
     use verkle_tree::neptune::Poseidon;
 
-    use crate::circuit::ipa2::utils::read_point_le;
+    use crate::circuit::ipa_fr::utils::read_point_le;
     // use crate::circuit::poseidon::PoseidonCircuit;
 
     use super::PoseidonCircuitInput;
