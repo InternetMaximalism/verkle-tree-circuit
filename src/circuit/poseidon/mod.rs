@@ -1,3 +1,4 @@
+// use franklin_crypto::bellman::bls12_381::Bls12;
 use franklin_crypto::bellman::pairing::Engine;
 use franklin_crypto::bellman::plonk::better_better_cs::cs::{
   Circuit, ConstraintSystem, Gate, GateInternal, Width4MainGateWithDNext,
@@ -56,7 +57,41 @@ impl<E: Engine, N: ArrayLength<Option<E::Fr>>> Circuit<E> for PoseidonCircuit<E,
   }
 }
 
-/// `output` = `input` ** 5
+/// `output` = `input` ** `alpha`
+/// This function is required that `alpha` is relatively prime to `p`.
+// pub fn calc_sigma<E, CS>(
+//   cs: &mut CS,
+//   input: AllocatedNum<E>,
+//   alpha: usize,
+// ) -> Result<AllocatedNum<E>, SynthesisError>
+// where
+//   E: Engine,
+//   CS: ConstraintSystem<E>,
+// {
+//   let mut alpha_bits = vec![];
+//   while alpha != 0 {
+//     alpha_bits.push(alpha & 1 == 1);
+//     alpha >>= 1;
+//   }
+//   // let alpha_bits = [true, false, true];
+//   let mut output = if alpha_bits[0] {
+//     input.clone()
+//   } else {
+//     AllocatedNum::<E>::one(cs)
+//   };
+//   let mut power = input;
+//   for b in alpha_bits.iter().skip(1) {
+//     power = power.square(cs)?;
+//     if *b {
+//       output = output.mul(cs, &power)?;
+//     }
+//   }
+
+//   Ok(output)
+// }
+
+/// `output` = `input` ** `alpha`
+/// TODO: This function is required that `alpha` is relatively prime to `p`.
 pub fn calc_sigma<E, CS>(
   cs: &mut CS,
   input: AllocatedNum<E>,
@@ -65,8 +100,8 @@ where
   E: Engine,
   CS: ConstraintSystem<E>,
 {
-  let input2 = input.mul(cs, &input)?;
-  let input4 = input2.mul(cs, &input2)?;
+  let input2 = input.square(cs)?;
+  let input4 = input2.square(cs)?;
   let input5 = input4.mul(cs, &input)?;
 
   Ok(input5)
