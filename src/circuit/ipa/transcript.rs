@@ -5,60 +5,60 @@ use franklin_crypto::jubjub::JubjubEngine;
 use crate::circuit::utils::read_point_be;
 
 pub trait Transcript<E: JubjubEngine>: Sized + Clone {
-  fn new(init_state: Option<E::Fr>) -> Self;
-  fn commit_field_element<CS: ConstraintSystem<E>>(
-    &mut self,
-    cs: &mut CS,
-    element: &Option<E::Fr>,
-  ) -> Result<(), SynthesisError>;
-  fn get_challenge(&mut self) -> Option<E::Fr>;
+    fn new(init_state: Option<E::Fr>) -> Self;
+    fn commit_field_element<CS: ConstraintSystem<E>>(
+        &mut self,
+        cs: &mut CS,
+        element: &Option<E::Fr>,
+    ) -> Result<(), SynthesisError>;
+    fn get_challenge(&mut self) -> Option<E::Fr>;
 }
 
 #[derive(Clone)]
 pub struct WrappedTranscript<E>
 where
-  E: JubjubEngine,
+    E: JubjubEngine,
 {
-  // blake_2s_state: Blake2sTranscript<E::Fr>,
-  state: Option<E::Fr>,
-  // _marker: PhantomData<CS>,
+    // blake_2s_state: Blake2sTranscript<E::Fr>,
+    state: Option<E::Fr>,
+    // _marker: PhantomData<CS>,
 }
 
 impl<E: JubjubEngine> Transcript<E> for WrappedTranscript<E> {
-  fn new(init_state: Option<E::Fr>) -> Self {
-    // let blake_2s_state = Blake2sTranscript::new();
+    fn new(init_state: Option<E::Fr>) -> Self {
+        // let blake_2s_state = Blake2sTranscript::new();
 
-    Self {
-      // blake_2s_state,
-      state: init_state,
-      // _marker: std::marker::PhantomData,
+        Self {
+            // blake_2s_state,
+            state: init_state,
+            // _marker: std::marker::PhantomData,
+        }
     }
-  }
 
-  fn commit_field_element<CS: ConstraintSystem<E>>(
-    &mut self,
-    cs: &mut CS,
-    element: &Option<E::Fr>,
-  ) -> Result<(), SynthesisError> {
-    let mut inputs = vec![];
-    inputs.push(self.state);
-    inputs.push(element.clone());
-    let mut poseidon_circuit: PoseidonCircuit<E> = PoseidonCircuit {
-      inputs,
-      output: None,
-      width: 3,
-    };
-    poseidon_circuit.run(cs.namespace(|| "poseidon hash"))?;
-    self.state = poseidon_circuit.output;
+    fn commit_field_element<CS: ConstraintSystem<E>>(
+        &mut self,
+        cs: &mut CS,
+        element: &Option<E::Fr>,
+    ) -> Result<(), SynthesisError> {
+        let mut inputs = vec![];
+        inputs.push(self.state);
+        inputs.push(element.clone());
+        let mut poseidon_circuit: PoseidonCircuit<E> = PoseidonCircuit {
+            inputs,
+            output: None,
+            width: 3,
+        };
+        poseidon_circuit.run(cs.namespace(|| "poseidon hash"))?;
+        self.state = poseidon_circuit.output;
 
-    Ok(())
-  }
+        Ok(())
+    }
 
-  fn get_challenge(&mut self) -> Option<E::Fr> {
-    let challenge = self.state.clone();
+    fn get_challenge(&mut self) -> Option<E::Fr> {
+        let challenge = self.state.clone();
 
-    challenge
-  }
+        challenge
+    }
 }
 
 const T: usize = 3;
@@ -71,282 +71,283 @@ const C: [&str; /* n_rounds_p */ 195] = [
 ];
 
 const M: [[&str; T]; T] = [
-  [
-    "0x109b7f411ba0e4c9b2b70caf5c36a7b194be7c11ad24378bfedb68592ba8118b",
-    "0x16ed41e13bb9c0c66ae119424fddbcbc9314dc9fdbdeea55d6c64543dc4903e0",
-    "0x2b90bba00fca0589f617e7dcbfe82e0df706ab640ceb247b791a93b74e36736d",
-  ],
-  [
-    "0x2969f27eed31a480b9c36c764379dbca2cc8fdd1415c3dded62940bcde0bd771",
-    "0x2e2419f9ec02ec394c9871c832963dc1b89d743c8c7b964029b2311687b1fe23",
-    "0x101071f0032379b697315876690f053d148d4e109f5fb065c8aacc55a0f89bfa",
-  ],
-  [
-    "0x143021ec686a3f330d5f9e654638065ce6cd79e28c5b3753326244ee65a1b1a7",
-    "0x176cc029695ad02582a70eff08a6fd99d057e12e58e7d7b6b16cdfabc8ee2911",
-    "0x19a3fc0a56702bf417ba7fee3802593fa644470307043f7773279cd71d25d5e0",
-  ],
+    [
+        "0x109b7f411ba0e4c9b2b70caf5c36a7b194be7c11ad24378bfedb68592ba8118b",
+        "0x16ed41e13bb9c0c66ae119424fddbcbc9314dc9fdbdeea55d6c64543dc4903e0",
+        "0x2b90bba00fca0589f617e7dcbfe82e0df706ab640ceb247b791a93b74e36736d",
+    ],
+    [
+        "0x2969f27eed31a480b9c36c764379dbca2cc8fdd1415c3dded62940bcde0bd771",
+        "0x2e2419f9ec02ec394c9871c832963dc1b89d743c8c7b964029b2311687b1fe23",
+        "0x101071f0032379b697315876690f053d148d4e109f5fb065c8aacc55a0f89bfa",
+    ],
+    [
+        "0x143021ec686a3f330d5f9e654638065ce6cd79e28c5b3753326244ee65a1b1a7",
+        "0x176cc029695ad02582a70eff08a6fd99d057e12e58e7d7b6b16cdfabc8ee2911",
+        "0x19a3fc0a56702bf417ba7fee3802593fa644470307043f7773279cd71d25d5e0",
+    ],
 ];
 
 #[derive(Clone)]
 pub struct SigmaCircuit<E: JubjubEngine> {
-  pub input: Option<E::Fr>,
-  pub output: Option<E::Fr>,
+    pub input: Option<E::Fr>,
+    pub output: Option<E::Fr>,
 }
 
 // out = input^5
 impl<E: JubjubEngine> SigmaCircuit<E> {
-  pub fn default() -> Self {
-    Self {
-      input: None,
-      output: None,
+    pub fn default() -> Self {
+        Self {
+            input: None,
+            output: None,
+        }
     }
-  }
 
-  pub fn run<CS>(&mut self, mut cs: CS) -> Result<(), SynthesisError>
-  where
-    CS: ConstraintSystem<E>,
-  {
-    let input: AllocatedNum<E> = AllocatedNum::alloc(cs.namespace(|| "allocate input"), || {
-      // Ok(self.input.unwrap())
-      self.input.ok_or(SynthesisError::UnconstrainedVariable)
-    })?;
-    let input2 = input.mul(cs.namespace(|| "compute input2"), &input)?;
-    let input4 = input2.mul(cs.namespace(|| "compute input4"), &input2)?;
-    let input5 = input4.mul(cs.namespace(|| "compute input5"), &input)?;
-    self.output = input5.get_value();
+    pub fn run<CS>(&mut self, mut cs: CS) -> Result<(), SynthesisError>
+    where
+        CS: ConstraintSystem<E>,
+    {
+        let input: AllocatedNum<E> =
+            AllocatedNum::alloc(cs.namespace(|| "allocate input"), || {
+                // Ok(self.input.unwrap())
+                self.input.ok_or(SynthesisError::UnconstrainedVariable)
+            })?;
+        let input2 = input.mul(cs.namespace(|| "compute input2"), &input)?;
+        let input4 = input2.mul(cs.namespace(|| "compute input4"), &input2)?;
+        let input5 = input4.mul(cs.namespace(|| "compute input5"), &input)?;
+        self.output = input5.get_value();
 
-    Ok(())
-  }
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
 pub struct ArkCircuit<E: JubjubEngine> {
-  pub inputs: Vec<Option<E::Fr>>,
-  pub outputs: Vec<Option<E::Fr>>,
-  pub width: usize,
-  pub round: usize,
+    pub inputs: Vec<Option<E::Fr>>,
+    pub outputs: Vec<Option<E::Fr>>,
+    pub width: usize,
+    pub round: usize,
 }
 
 impl<E: JubjubEngine> ArkCircuit<E> {
-  pub fn with_capacity(capacity: usize, round: usize) -> Self {
-    Self {
-      inputs: vec![None; capacity],
-      outputs: vec![None; capacity],
-      width: capacity,
-      round,
-    }
-  }
-
-  pub fn run<CS>(&mut self, mut cs: CS) -> Result<(), SynthesisError>
-  where
-    CS: ConstraintSystem<E>,
-  {
-    assert_eq!(self.inputs.len(), self.width, "invalid inputs length");
-
-    for i in 0..self.width {
-      let inputs_i: AllocatedNum<E> =
-        AllocatedNum::alloc(cs.namespace(|| format!("allocate inputs[{}]", i)), || {
-          Ok(self.inputs[i].unwrap())
-          // self.inputs[i].ok_or(SynthesisError::UnconstrainedVariable)
-        })?;
-      let reader = &mut std::io::Cursor::new(hex::decode(&C[i + self.round][2..]).unwrap());
-      let c: E::Fr = read_point_be(reader).unwrap();
-      let output_i =
-        inputs_i.add_constant(cs.namespace(|| format!("add inputs[{}] to c", i)), c)?;
-      self.outputs[i] = output_i.get_value();
+    pub fn with_capacity(capacity: usize, round: usize) -> Self {
+        Self {
+            inputs: vec![None; capacity],
+            outputs: vec![None; capacity],
+            width: capacity,
+            round,
+        }
     }
 
-    Ok(())
-  }
+    pub fn run<CS>(&mut self, mut cs: CS) -> Result<(), SynthesisError>
+    where
+        CS: ConstraintSystem<E>,
+    {
+        assert_eq!(self.inputs.len(), self.width, "invalid inputs length");
+
+        for i in 0..self.width {
+            let inputs_i: AllocatedNum<E> =
+                AllocatedNum::alloc(cs.namespace(|| format!("allocate inputs[{}]", i)), || {
+                    Ok(self.inputs[i].unwrap())
+                    // self.inputs[i].ok_or(SynthesisError::UnconstrainedVariable)
+                })?;
+            let reader = &mut std::io::Cursor::new(hex::decode(&C[i + self.round][2..]).unwrap());
+            let c: E::Fr = read_point_be(reader).unwrap();
+            let output_i =
+                inputs_i.add_constant(cs.namespace(|| format!("add inputs[{}] to c", i)), c)?;
+            self.outputs[i] = output_i.get_value();
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
 pub struct MixCircuit<E: JubjubEngine> {
-  pub inputs: Vec<Option<E::Fr>>,
-  pub outputs: Vec<Option<E::Fr>>,
-  pub width: usize,
+    pub inputs: Vec<Option<E::Fr>>,
+    pub outputs: Vec<Option<E::Fr>>,
+    pub width: usize,
 }
 
 impl<E: JubjubEngine> MixCircuit<E> {
-  pub fn with_capacity(capacity: usize) -> Self {
-    Self {
-      inputs: vec![None; capacity],
-      outputs: vec![None; capacity],
-      width: capacity,
-    }
-  }
-
-  pub fn run<CS>(&mut self, mut cs: CS) -> Result<(), SynthesisError>
-  where
-    CS: ConstraintSystem<E>,
-  {
-    assert_eq!(self.inputs.len(), self.width, "invalid inputs length");
-
-    let zero = AllocatedNum::zero(cs.namespace(|| "allocate zero"))?;
-    for i in 0..self.width {
-      let mut lc = zero.clone();
-      for j in 0..self.width {
-        let reader = &mut std::io::Cursor::new(hex::decode(&M[j][i][2..]).unwrap());
-        let m = read_point_be::<E::Fr, _>(reader).unwrap();
-        let wrapped_m =
-          AllocatedNum::alloc(cs.namespace(|| format!("allocate M[{}][{}]", j, i)), || {
-            Ok(m)
-          })?;
-        let inputs_j = AllocatedNum::alloc(
-          cs.namespace(|| format!("allocate inputs[{}][{}]", j, i)),
-          || {
-            Ok(self.inputs[j].unwrap())
-            // self.inputs[j].ok_or(SynthesisError::UnconstrainedVariable)
-          },
-        )?; // TODO: uncheck
-        let tmp = wrapped_m.mul(
-          cs.namespace(|| format!("multiply M[{}][{}] by inputs[{}]", j, i, j)),
-          &inputs_j,
-        )?;
-        lc = lc.add(
-          cs.namespace(|| format!("add lc to tmp[{}][{}]", j, i)),
-          &tmp,
-        )?;
-      }
-
-      self.outputs[i] = lc.get_value();
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            inputs: vec![None; capacity],
+            outputs: vec![None; capacity],
+            width: capacity,
+        }
     }
 
-    Ok(())
-  }
+    pub fn run<CS>(&mut self, mut cs: CS) -> Result<(), SynthesisError>
+    where
+        CS: ConstraintSystem<E>,
+    {
+        assert_eq!(self.inputs.len(), self.width, "invalid inputs length");
+
+        let zero = AllocatedNum::zero(cs.namespace(|| "allocate zero"))?;
+        for i in 0..self.width {
+            let mut lc = zero.clone();
+            for j in 0..self.width {
+                let reader = &mut std::io::Cursor::new(hex::decode(&M[j][i][2..]).unwrap());
+                let m = read_point_be::<E::Fr, _>(reader).unwrap();
+                let wrapped_m = AllocatedNum::alloc(
+                    cs.namespace(|| format!("allocate M[{}][{}]", j, i)),
+                    || Ok(m),
+                )?;
+                let inputs_j = AllocatedNum::alloc(
+                    cs.namespace(|| format!("allocate inputs[{}][{}]", j, i)),
+                    || {
+                        Ok(self.inputs[j].unwrap())
+                        // self.inputs[j].ok_or(SynthesisError::UnconstrainedVariable)
+                    },
+                )?; // TODO: uncheck
+                let tmp = wrapped_m.mul(
+                    cs.namespace(|| format!("multiply M[{}][{}] by inputs[{}]", j, i, j)),
+                    &inputs_j,
+                )?;
+                lc = lc.add(
+                    cs.namespace(|| format!("add lc to tmp[{}][{}]", j, i)),
+                    &tmp,
+                )?;
+            }
+
+            self.outputs[i] = lc.get_value();
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
 pub struct PoseidonCircuit<E: JubjubEngine> {
-  pub inputs: Vec<Option<E::Fr>>,
-  pub output: Option<E::Fr>,
-  pub width: usize,
+    pub inputs: Vec<Option<E::Fr>>,
+    pub output: Option<E::Fr>,
+    pub width: usize,
 }
 
 impl<E: JubjubEngine> PoseidonCircuit<E> {
-  pub fn with_capacity(capacity: usize) -> Self {
-    Self {
-      inputs: vec![None; capacity - 1],
-      output: None,
-      width: capacity,
-    }
-  }
-
-  pub fn run<CS>(&mut self, mut cs: CS) -> Result<(), SynthesisError>
-  where
-    CS: ConstraintSystem<E>,
-  {
-    let input_num = self.width - 1;
-    assert_eq!(self.inputs.len(), input_num, "invalid inputs length");
-
-    // Using recommended parameters from whitepaper https://eprint.iacr.org/2019/458.pdf (table 2, table 8)
-    // Generated by https://extgit.iaik.tugraz.at/krypto/hadeshash/-/blob/master/code/calc_round_numbers.py
-    // And rounded up to nearest integer that divides by width
-    // let C: [E::Fr; T * (n_rounds_f + n_rounds_p)] = POSEIDON_C(T);
-    // let M: [[E::Fr; T]; T] = POSEIDON_M(T);
-
-    let mut ark: Vec<ArkCircuit<E>> = Vec::with_capacity(N_ROUNDS_F + N_ROUNDS_P - 1);
-    let mut sigma_f: Vec<Vec<SigmaCircuit<E>>> =
-      vec![Vec::with_capacity(self.width); N_ROUNDS_F - 1];
-    let mut sigma_p: Vec<SigmaCircuit<E>> = Vec::with_capacity(N_ROUNDS_P);
-    // let mut mix: Vec<MixCircuit<E>> = Vec::with_capacity(N_ROUNDS_F + N_ROUNDS_P - 1);
-    let mut last_mix: MixCircuit<E> = MixCircuit::with_capacity(self.width);
-
-    let mut wrapped_inputs = vec![];
-    for j in 0..input_num {
-      let input_j = AllocatedNum::alloc(
-        cs.namespace(|| format!("allocate self.inputs[{}]", j)),
-        || {
-          Ok(self.inputs[j].unwrap())
-          // self.inputs[j].ok_or(SynthesisError::UnconstrainedVariable)
-        },
-      )?;
-      wrapped_inputs.push(input_j);
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            inputs: vec![None; capacity - 1],
+            output: None,
+            width: capacity,
+        }
     }
 
-    let zero = AllocatedNum::zero(cs.namespace(|| "allocate zero"))?;
-    for i in 0..(N_ROUNDS_F + N_ROUNDS_P - 1) {
-      ark.push(ArkCircuit::with_capacity(self.width, self.width * i));
-      for j in 0..self.width {
-        ark[i].inputs[j] = if i == 0 {
-          // ark[0].inputs[j] = j < input_num ? inputs[j] : 0;
-          if j < input_num {
-            wrapped_inputs[j].get_value()
-          } else {
-            zero.get_value()
-          }
-          // let input_j_or_zero = AllocatedNum::conditionally_select(
-          //   cs.namespace(|| format!("select self.input[{}] if {} < input_num", j, j)),
-          //   &wrapped_inputs[j],
-          //   &zero,
-          //   &Boolean::Constant(j < input_num),
-          // )?;
-          // input_j_or_zero.get_value()
-        } else {
-          // ark[i].inputs[j] = mix[i-1].outputs[j];
-          let input_j = AllocatedNum::alloc(
-            cs.namespace(|| format!("allocate mix[{}].outputs[{}]", i - 1, j)),
+    pub fn run<CS>(&mut self, mut cs: CS) -> Result<(), SynthesisError>
+    where
+        CS: ConstraintSystem<E>,
+    {
+        let input_num = self.width - 1;
+        assert_eq!(self.inputs.len(), input_num, "invalid inputs length");
+
+        // Using recommended parameters from whitepaper https://eprint.iacr.org/2019/458.pdf (table 2, table 8)
+        // Generated by https://extgit.iaik.tugraz.at/krypto/hadeshash/-/blob/master/code/calc_round_numbers.py
+        // And rounded up to nearest integer that divides by width
+        // let C: [E::Fr; T * (n_rounds_f + n_rounds_p)] = POSEIDON_C(T);
+        // let M: [[E::Fr; T]; T] = POSEIDON_M(T);
+
+        let mut ark: Vec<ArkCircuit<E>> = Vec::with_capacity(N_ROUNDS_F + N_ROUNDS_P - 1);
+        let mut sigma_f: Vec<Vec<SigmaCircuit<E>>> =
+            vec![Vec::with_capacity(self.width); N_ROUNDS_F - 1];
+        let mut sigma_p: Vec<SigmaCircuit<E>> = Vec::with_capacity(N_ROUNDS_P);
+        // let mut mix: Vec<MixCircuit<E>> = Vec::with_capacity(N_ROUNDS_F + N_ROUNDS_P - 1);
+        let mut last_mix: MixCircuit<E> = MixCircuit::with_capacity(self.width);
+
+        let mut wrapped_inputs = vec![];
+        for j in 0..input_num {
+            let input_j = AllocatedNum::alloc(
+                cs.namespace(|| format!("allocate self.inputs[{}]", j)),
+                || {
+                    Ok(self.inputs[j].unwrap())
+                    // self.inputs[j].ok_or(SynthesisError::UnconstrainedVariable)
+                },
+            )?;
+            wrapped_inputs.push(input_j);
+        }
+
+        let zero = AllocatedNum::zero(cs.namespace(|| "allocate zero"))?;
+        for i in 0..(N_ROUNDS_F + N_ROUNDS_P - 1) {
+            ark.push(ArkCircuit::with_capacity(self.width, self.width * i));
+            for j in 0..self.width {
+                ark[i].inputs[j] = if i == 0 {
+                    // ark[0].inputs[j] = j < input_num ? inputs[j] : 0;
+                    if j < input_num {
+                        wrapped_inputs[j].get_value()
+                    } else {
+                        zero.get_value()
+                    }
+                    // let input_j_or_zero = AllocatedNum::conditionally_select(
+                    //   cs.namespace(|| format!("select self.input[{}] if {} < input_num", j, j)),
+                    //   &wrapped_inputs[j],
+                    //   &zero,
+                    //   &Boolean::Constant(j < input_num),
+                    // )?;
+                    // input_j_or_zero.get_value()
+                } else {
+                    // ark[i].inputs[j] = mix[i-1].outputs[j];
+                    let input_j = AllocatedNum::alloc(
+                        cs.namespace(|| format!("allocate mix[{}].outputs[{}]", i - 1, j)),
+                        || {
+                            Ok(last_mix.outputs[j].unwrap())
+                            // last_mix.outputs[j].ok_or(SynthesisError::UnconstrainedVariable)
+                        },
+                    )?;
+                    input_j.get_value()
+                };
+            }
+            ark[i].run(cs.namespace(|| format!("ark[{}]", i)))?;
+
+            last_mix = MixCircuit::with_capacity(self.width); // current_mix
+            if i < N_ROUNDS_F / 2 || i >= N_ROUNDS_P + N_ROUNDS_F / 2 {
+                let k = if i < N_ROUNDS_F / 2 {
+                    i
+                } else {
+                    i - N_ROUNDS_P
+                };
+                for j in 0..self.width {
+                    let mut sigma_f_k_j = SigmaCircuit::default();
+                    sigma_f_k_j.input = ark[i].outputs[j];
+                    sigma_f_k_j
+                        .run(cs.namespace(|| format!("sigma_f[{}][{}]", k, j)))
+                        .unwrap();
+                    last_mix.inputs[j] = sigma_f_k_j.output;
+                    sigma_f[k].push(sigma_f_k_j); // unnecessary
+                }
+            } else {
+                let k = i - N_ROUNDS_F / 2; // unnecessary
+                let mut sigma_p_k = SigmaCircuit::default();
+                sigma_p_k.input = ark[i].outputs[0];
+                sigma_p_k
+                    .run(cs.namespace(|| format!("sigma_p[{}]", k)))
+                    .unwrap();
+                last_mix.inputs[0] = sigma_p_k.output;
+                sigma_p.push(sigma_p_k); // unnecessary
+                for j in 1..T {
+                    last_mix.inputs[j] = ark[i].outputs[j];
+                }
+            }
+            last_mix.run(cs.namespace(|| format!("mix[{}]", i)))?;
+        }
+
+        // last round is done only for the first word, so we do it manually to save constraints
+        let mut last_sigma_f = SigmaCircuit::default();
+        let reader = &mut std::io::Cursor::new(
+            hex::decode(&C[self.width * (N_ROUNDS_F + N_ROUNDS_P - 1)][2..]).unwrap(),
+        );
+        let c = read_point_be::<E::Fr, _>(reader).unwrap();
+        let output_0 = AllocatedNum::alloc(
+            cs.namespace(|| format!("allocate mix[{}].outputs[0]", N_ROUNDS_F + N_ROUNDS_P - 1)),
             || {
-              Ok(last_mix.outputs[j].unwrap())
-              // last_mix.outputs[j].ok_or(SynthesisError::UnconstrainedVariable)
+                Ok(last_mix.outputs[0].unwrap())
+                // last_mix.outputs[0].ok_or(SynthesisError::UnconstrainedVariable)
             },
-          )?;
-          input_j.get_value()
-        };
-      }
-      ark[i].run(cs.namespace(|| format!("ark[{}]", i)))?;
+        )?;
+        let last_sigma_f_input = output_0.add_constant(cs.namespace(|| "add output_0 to c"), c)?;
+        last_sigma_f.input = last_sigma_f_input.get_value();
+        last_sigma_f.run(cs.namespace(|| "last_sigma_f"))?;
+        self.output = last_sigma_f.output;
 
-      last_mix = MixCircuit::with_capacity(self.width); // current_mix
-      if i < N_ROUNDS_F / 2 || i >= N_ROUNDS_P + N_ROUNDS_F / 2 {
-        let k = if i < N_ROUNDS_F / 2 {
-          i
-        } else {
-          i - N_ROUNDS_P
-        };
-        for j in 0..self.width {
-          let mut sigma_f_k_j = SigmaCircuit::default();
-          sigma_f_k_j.input = ark[i].outputs[j];
-          sigma_f_k_j
-            .run(cs.namespace(|| format!("sigma_f[{}][{}]", k, j)))
-            .unwrap();
-          last_mix.inputs[j] = sigma_f_k_j.output;
-          sigma_f[k].push(sigma_f_k_j); // unnecessary
-        }
-      } else {
-        let k = i - N_ROUNDS_F / 2; // unnecessary
-        let mut sigma_p_k = SigmaCircuit::default();
-        sigma_p_k.input = ark[i].outputs[0];
-        sigma_p_k
-          .run(cs.namespace(|| format!("sigma_p[{}]", k)))
-          .unwrap();
-        last_mix.inputs[0] = sigma_p_k.output;
-        sigma_p.push(sigma_p_k); // unnecessary
-        for j in 1..T {
-          last_mix.inputs[j] = ark[i].outputs[j];
-        }
-      }
-      last_mix.run(cs.namespace(|| format!("mix[{}]", i)))?;
+        Ok(())
     }
-
-    // last round is done only for the first word, so we do it manually to save constraints
-    let mut last_sigma_f = SigmaCircuit::default();
-    let reader = &mut std::io::Cursor::new(
-      hex::decode(&C[self.width * (N_ROUNDS_F + N_ROUNDS_P - 1)][2..]).unwrap(),
-    );
-    let c = read_point_be::<E::Fr, _>(reader).unwrap();
-    let output_0 = AllocatedNum::alloc(
-      cs.namespace(|| format!("allocate mix[{}].outputs[0]", N_ROUNDS_F + N_ROUNDS_P - 1)),
-      || {
-        Ok(last_mix.outputs[0].unwrap())
-        // last_mix.outputs[0].ok_or(SynthesisError::UnconstrainedVariable)
-      },
-    )?;
-    let last_sigma_f_input = output_0.add_constant(cs.namespace(|| "add output_0 to c"), c)?;
-    last_sigma_f.input = last_sigma_f_input.get_value();
-    last_sigma_f.run(cs.namespace(|| "last_sigma_f"))?;
-    self.output = last_sigma_f.output;
-
-    Ok(())
-  }
 }

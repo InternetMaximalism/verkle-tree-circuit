@@ -11,61 +11,61 @@ use super::transcript::{Transcript, WrappedTranscript};
 
 #[derive(Clone, Debug)]
 pub struct IpaProof<E: Engine> {
-  pub l: Vec<E::G1Affine>,
-  pub r: Vec<E::G1Affine>,
-  pub a: E::Fr,
+    pub l: Vec<E::G1Affine>,
+    pub r: Vec<E::G1Affine>,
+    pub a: E::Fr,
 }
 
 #[derive(Clone)]
 pub struct OptionIpaProof<E: Engine> {
-  pub l: Vec<Option<E::G1Affine>>,
-  pub r: Vec<Option<E::G1Affine>>,
-  pub a: Option<E::Fr>,
+    pub l: Vec<Option<E::G1Affine>>,
+    pub r: Vec<Option<E::G1Affine>>,
+    pub a: Option<E::Fr>,
 }
 
 impl<E: Engine> OptionIpaProof<E> {
-  pub fn with_depth(depth: usize) -> Self {
-    Self {
-      l: vec![None; depth],
-      r: vec![None; depth],
-      a: None,
+    pub fn with_depth(depth: usize) -> Self {
+        Self {
+            l: vec![None; depth],
+            r: vec![None; depth],
+            a: None,
+        }
     }
-  }
 }
 
 impl<E: Engine> From<IpaProof<E>> for OptionIpaProof<E> {
-  fn from(ipa_proof: IpaProof<E>) -> Self {
-    Self {
-      l: ipa_proof.l.iter().map(|&l| Some(l)).collect::<Vec<_>>(),
-      r: ipa_proof.r.iter().map(|&r| Some(r)).collect::<Vec<_>>(),
-      a: Some(ipa_proof.a),
+    fn from(ipa_proof: IpaProof<E>) -> Self {
+        Self {
+            l: ipa_proof.l.iter().map(|&l| Some(l)).collect::<Vec<_>>(),
+            r: ipa_proof.r.iter().map(|&r| Some(r)).collect::<Vec<_>>(),
+            a: Some(ipa_proof.a),
+        }
     }
-  }
 }
 
 pub fn generate_challenges<
-  'a,
-  E: Engine,
-  CS: ConstraintSystem<E>,
-  WP: WrappedAffinePoint<'a, E>,
-  AD: AuxData<E>,
+    'a,
+    E: Engine,
+    CS: ConstraintSystem<E>,
+    WP: WrappedAffinePoint<'a, E>,
+    AD: AuxData<E>,
 >(
-  cs: &mut CS,
-  ipa_proof: OptionIpaProof<E>,
-  transcript: &mut WrappedTranscript<E>,
-  rns_params: &'a RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
-  aux_data: &AD,
+    cs: &mut CS,
+    ipa_proof: OptionIpaProof<E>,
+    transcript: &mut WrappedTranscript<E>,
+    rns_params: &'a RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
+    aux_data: &AD,
 ) -> Result<Vec<AllocatedNum<E>>, SynthesisError> {
-  let mut challenges: Vec<AllocatedNum<E>> = Vec::with_capacity(ipa_proof.l.len());
-  for (&l, &r) in ipa_proof.l.iter().zip(&ipa_proof.r) {
-    let wrapped_l = WP::alloc(cs, l, rns_params, aux_data)?;
-    let wrapped_r = WP::alloc(cs, r, rns_params, aux_data)?;
-    transcript.commit_wrapped_affine(cs, wrapped_l)?;
-    transcript.commit_wrapped_affine(cs, wrapped_r)?;
+    let mut challenges: Vec<AllocatedNum<E>> = Vec::with_capacity(ipa_proof.l.len());
+    for (&l, &r) in ipa_proof.l.iter().zip(&ipa_proof.r) {
+        let wrapped_l = WP::alloc(cs, l, rns_params, aux_data)?;
+        let wrapped_r = WP::alloc(cs, r, rns_params, aux_data)?;
+        transcript.commit_wrapped_affine(cs, wrapped_l)?;
+        transcript.commit_wrapped_affine(cs, wrapped_r)?;
 
-    let c = transcript.get_challenge();
-    challenges.push(c);
-  }
+        let c = transcript.get_challenge();
+        challenges.push(c);
+    }
 
-  Ok(challenges)
+    Ok(challenges)
 }

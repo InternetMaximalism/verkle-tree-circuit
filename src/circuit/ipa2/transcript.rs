@@ -12,138 +12,138 @@ use crate::circuit::poseidon::calc_poseidon;
 use super::utils::write_point_le;
 
 pub trait Transcript<E: Engine>: Sized + Clone {
-  fn new(init_state: AllocatedNum<E>) -> Self;
-  fn commit_alloc_num<CS: ConstraintSystem<E>>(
-    &mut self,
-    cs: &mut CS,
-    element: AllocatedNum<E>,
-  ) -> Result<(), SynthesisError>;
-  fn get_challenge(&mut self) -> AllocatedNum<E>;
+    fn new(init_state: AllocatedNum<E>) -> Self;
+    fn commit_alloc_num<CS: ConstraintSystem<E>>(
+        &mut self,
+        cs: &mut CS,
+        element: AllocatedNum<E>,
+    ) -> Result<(), SynthesisError>;
+    fn get_challenge(&mut self) -> AllocatedNum<E>;
 }
 
 #[derive(Clone)]
 pub struct WrappedTranscript<E>
 where
-  E: Engine,
+    E: Engine,
 {
-  // blake_2s_state: Blake2sTranscript<E::Fr>,
-  state: AllocatedNum<E>,
-  // _marker: PhantomData<CS>,
+    // blake_2s_state: Blake2sTranscript<E::Fr>,
+    state: AllocatedNum<E>,
+    // _marker: PhantomData<CS>,
 }
 
 impl<E: Engine> Transcript<E> for WrappedTranscript<E> {
-  fn new(init_state: AllocatedNum<E>) -> Self {
-    // let blake_2s_state = Blake2sTranscript::new();
+    fn new(init_state: AllocatedNum<E>) -> Self {
+        // let blake_2s_state = Blake2sTranscript::new();
 
-    Self {
-      // blake_2s_state,
-      state: init_state,
-      // _marker: std::marker::PhantomData,
+        Self {
+            // blake_2s_state,
+            state: init_state,
+            // _marker: std::marker::PhantomData,
+        }
     }
-  }
 
-  fn commit_alloc_num<CS: ConstraintSystem<E>>(
-    &mut self,
-    cs: &mut CS,
-    element: AllocatedNum<E>,
-  ) -> Result<(), SynthesisError> {
-    let mut inputs = vec![];
-    inputs.push(self.state);
-    inputs.push(element.clone());
-    self.state = calc_poseidon(cs, &inputs)?;
+    fn commit_alloc_num<CS: ConstraintSystem<E>>(
+        &mut self,
+        cs: &mut CS,
+        element: AllocatedNum<E>,
+    ) -> Result<(), SynthesisError> {
+        let mut inputs = vec![];
+        inputs.push(self.state);
+        inputs.push(element.clone());
+        self.state = calc_poseidon(cs, &inputs)?;
 
-    Ok(())
-  }
+        Ok(())
+    }
 
-  fn get_challenge(&mut self) -> AllocatedNum<E> {
-    let challenge = self.state.clone();
+    fn get_challenge(&mut self) -> AllocatedNum<E> {
+        let challenge = self.state.clone();
 
-    challenge
-  }
+        challenge
+    }
 }
 
 impl<E: Engine> WrappedTranscript<E> {
-  // pub fn with_bytes(bytes: &[u8]) -> Self {
-  //   let chunk_size = (E::Fr::NUM_BITS / 8) as usize;
-  //   assert!(chunk_size != 0);
-  //   assert!(bytes.len() <= chunk_size);
-  //   let element = read_point_le::<E::Fr>(&bytes).unwrap();
+    // pub fn with_bytes(bytes: &[u8]) -> Self {
+    //   let chunk_size = (E::Fr::NUM_BITS / 8) as usize;
+    //   assert!(chunk_size != 0);
+    //   assert!(bytes.len() <= chunk_size);
+    //   let element = read_point_le::<E::Fr>(&bytes).unwrap();
 
-  //   Self {
-  //     state: element.clone(),
-  //   }
-  // }
+    //   Self {
+    //     state: element.clone(),
+    //   }
+    // }
 
-  pub fn commit_bits<CS: ConstraintSystem<E>>(
-    &mut self,
-    cs: &mut CS,
-    bytes: Vec<AllocatedBit>,
-  ) -> Result<(), SynthesisError> {
-    let chunk_size = E::Fr::NUM_BITS as usize;
-    assert!(chunk_size != 0);
-    for b in bytes
-    /* bytes.chunks(chunk_size) */
-    {
-      let element = AllocatedNum::from_boolean_is(Boolean::from(b));
-      self.commit_alloc_num(cs, element)?;
+    pub fn commit_bits<CS: ConstraintSystem<E>>(
+        &mut self,
+        cs: &mut CS,
+        bytes: Vec<AllocatedBit>,
+    ) -> Result<(), SynthesisError> {
+        let chunk_size = E::Fr::NUM_BITS as usize;
+        assert!(chunk_size != 0);
+        for b in bytes
+        /* bytes.chunks(chunk_size) */
+        {
+            let element = AllocatedNum::from_boolean_is(Boolean::from(b));
+            self.commit_alloc_num(cs, element)?;
+        }
+
+        Ok(())
     }
 
-    Ok(())
-  }
+    pub fn commit_fr<CS: ConstraintSystem<E>>(
+        &mut self,
+        cs: &mut CS,
+        element: Option<E::Fr>,
+    ) -> Result<(), SynthesisError> {
+        let input = AllocatedNum::alloc(cs, || Ok(element.unwrap()))?;
+        self.commit_alloc_num(cs, input)?;
 
-  pub fn commit_fr<CS: ConstraintSystem<E>>(
-    &mut self,
-    cs: &mut CS,
-    element: Option<E::Fr>,
-  ) -> Result<(), SynthesisError> {
-    let input = AllocatedNum::alloc(cs, || Ok(element.unwrap()))?;
-    self.commit_alloc_num(cs, input)?;
+        Ok(())
+    }
 
-    Ok(())
-  }
+    pub fn commit_field_element<'a, CS: ConstraintSystem<E>, F: PrimeField>(
+        &mut self,
+        cs: &mut CS,
+        element: FieldElement<'a, E, F>,
+    ) -> Result<(), SynthesisError> {
+        let value_bits = if let Some(value) = element.get_field_value() {
+            write_point_le(&value)
+                .iter()
+                .flat_map(|x| {
+                    let mut x_bits = vec![];
+                    let mut y = x.clone();
+                    for _ in 0..8 {
+                        let a = AllocatedBit::alloc(cs, Some(y % 2 == 1));
+                        x_bits.push(a);
+                        y = y >> 1;
+                    }
 
-  pub fn commit_field_element<'a, CS: ConstraintSystem<E>, F: PrimeField>(
-    &mut self,
-    cs: &mut CS,
-    element: FieldElement<'a, E, F>,
-  ) -> Result<(), SynthesisError> {
-    let value_bits = if let Some(value) = element.get_field_value() {
-      write_point_le(&value)
-        .iter()
-        .flat_map(|x| {
-          let mut x_bits = vec![];
-          let mut y = x.clone();
-          for _ in 0..8 {
-            let a = AllocatedBit::alloc(cs, Some(y % 2 == 1));
-            x_bits.push(a);
-            y = y >> 1;
-          }
+                    x_bits
+                })
+                .collect::<Result<Vec<_>, SynthesisError>>()?
+        } else {
+            let mut value_bits = vec![];
+            for _ in 0..F::NUM_BITS {
+                value_bits.push(AllocatedBit::alloc(cs, None)?);
+            }
 
-          x_bits
-        })
-        .collect::<Result<Vec<_>, SynthesisError>>()?
-    } else {
-      let mut value_bits = vec![];
-      for _ in 0..F::NUM_BITS {
-        value_bits.push(AllocatedBit::alloc(cs, None)?);
-      }
+            value_bits
+        };
 
-      value_bits
-    };
+        self.commit_bits(cs, value_bits)?;
 
-    self.commit_bits(cs, value_bits)?;
+        Ok(())
+    }
 
-    Ok(())
-  }
+    pub fn commit_wrapped_affine<'a, CS: ConstraintSystem<E>, WP: WrappedAffinePoint<'a, E>>(
+        &mut self,
+        cs: &mut CS,
+        element: WP,
+    ) -> Result<(), SynthesisError> {
+        self.commit_field_element(cs, element.get_point().get_x())?;
+        self.commit_field_element(cs, element.get_point().get_y())?;
 
-  pub fn commit_wrapped_affine<'a, CS: ConstraintSystem<E>, WP: WrappedAffinePoint<'a, E>>(
-    &mut self,
-    cs: &mut CS,
-    element: WP,
-  ) -> Result<(), SynthesisError> {
-    self.commit_field_element(cs, element.get_point().get_x())?;
-    self.commit_field_element(cs, element.get_point().get_y())?;
-
-    Ok(())
-  }
+        Ok(())
+    }
 }

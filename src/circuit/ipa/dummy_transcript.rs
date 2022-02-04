@@ -1,40 +1,40 @@
 use franklin_crypto::{
-  bellman::{
-    plonk::commitments::transcript::{Blake2sTranscript, Prng, Transcript},
-    ConstraintSystem, SynthesisError,
-  },
-  jubjub::JubjubEngine,
+    bellman::{
+        plonk::commitments::transcript::{Blake2sTranscript, Prng, Transcript},
+        ConstraintSystem, SynthesisError,
+    },
+    jubjub::JubjubEngine,
 };
 
 use super::transcript::Transcript as TranscriptCircuit;
 
 #[derive(Clone)]
 pub struct WrappedTranscript<E: JubjubEngine> {
-  pub state: Blake2sTranscript<E::Fr>,
+    pub state: Blake2sTranscript<E::Fr>,
 }
 
 impl<E: JubjubEngine> TranscriptCircuit<E> for WrappedTranscript<E> {
-  fn new(_init_state: Option<E::Fr>) -> Self {
-    let state = Blake2sTranscript::new();
+    fn new(_init_state: Option<E::Fr>) -> Self {
+        let state = Blake2sTranscript::new();
 
-    Self { state }
-  }
-
-  fn commit_field_element<CS: ConstraintSystem<E>>(
-    &mut self,
-    _cs: &mut CS,
-    element: &Option<E::Fr>,
-  ) -> Result<(), SynthesisError> {
-    if let Some(elt) = element {
-      self.state.commit_field_element(elt)
+        Self { state }
     }
 
-    Ok(())
-  }
+    fn commit_field_element<CS: ConstraintSystem<E>>(
+        &mut self,
+        _cs: &mut CS,
+        element: &Option<E::Fr>,
+    ) -> Result<(), SynthesisError> {
+        if let Some(elt) = element {
+            self.state.commit_field_element(elt)
+        }
 
-  fn get_challenge(&mut self) -> Option<E::Fr> {
-    let value = self.state.get_challenge();
+        Ok(())
+    }
 
-    Some(value)
-  }
+    fn get_challenge(&mut self) -> Option<E::Fr> {
+        let value = self.state.get_challenge();
+
+        Some(value)
+    }
 }
