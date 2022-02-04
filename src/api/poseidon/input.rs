@@ -41,47 +41,29 @@ mod poseidon_api_tests {
 
   use franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
   use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr};
-  // use franklin_crypto::bellman::plonk::better_better_cs::proof::Proof;
-  // use franklin_crypto::bellman::plonk::better_better_cs::setup::VerificationKey;
-  // use franklin_crypto::bellman::plonk::commitments::transcript::keccak_transcript::RollingKeccakTranscript;
   use franklin_crypto::bellman::Field;
-  // use franklin_crypto::bellman::ScalarEngine;
-  use generic_array::typenum::*;
+  use generic_array::typenum;
+  use verkle_tree::ff_utils::bn256_fr::Bn256Fr;
+  use verkle_tree::ipa_fr::transcript::{convert_ff_ce_to_ff, convert_ff_to_ff_ce};
+  use verkle_tree::neptune::poseidon::PoseidonConstants;
+  use verkle_tree::neptune::Poseidon;
 
   use crate::circuit::ipa2::utils::read_point_le;
   // use crate::circuit::poseidon::PoseidonCircuit;
 
   use super::PoseidonCircuitInput;
 
-  fn make_test_input_case1() -> PoseidonCircuitInput<U2> {
-    let input1 = crate::circuit::ipa2::utils::read_point_le::<Fr>(&[1]).unwrap();
-    let input2 = crate::circuit::ipa2::utils::read_point_le::<Fr>(&[2]).unwrap();
-    let inputs = vec![input1, input2];
-    let output = crate::circuit::ipa2::utils::read_point_le::<Fr>(&[
-      251, 230, 185, 64, 12, 136, 124, 164, 37, 71, 120, 65, 234, 225, 30, 7, 157, 148, 169, 225,
-      186, 183, 76, 63, 231, 241, 40, 189, 50, 55, 145, 23,
-    ])
-    .unwrap();
-    let circuit_input = PoseidonCircuitInput {
-      inputs,
-      output,
-      _n: std::marker::PhantomData,
-    };
+  fn make_test_input(inputs: Vec<Fr>) -> PoseidonCircuitInput<typenum::U2> {
+    let preimage = inputs
+      .iter()
+      .map(|input| convert_ff_ce_to_ff(input.clone()))
+      .collect::<anyhow::Result<Vec<_>>>()
+      .unwrap();
+    let constants = PoseidonConstants::new();
+    let mut h = Poseidon::<Bn256Fr, typenum::U2>::new_with_preimage(&preimage, &constants);
+    let output = convert_ff_to_ff_ce(h.hash()).unwrap();
+    println!("output: {:?}", output);
 
-    circuit_input
-  }
-
-  fn make_test_input_case2() -> PoseidonCircuitInput<U2> {
-    let mut minus_one = Fr::one();
-    minus_one.negate();
-    let input1 = minus_one.clone();
-    let input2 = minus_one.clone();
-    let inputs = vec![input1, input2];
-    let output = read_point_le::<Fr>(&[
-      139, 216, 105, 49, 182, 238, 242, 238, 71, 120, 119, 185, 65, 172, 205, 105, 49, 66, 1, 26,
-      106, 254, 169, 52, 165, 244, 248, 195, 74, 157, 173, 1,
-    ])
-    .unwrap();
     let circuit_input = PoseidonCircuitInput {
       inputs,
       output,
@@ -121,7 +103,15 @@ mod poseidon_api_tests {
   #[test]
   fn test_fr_poseidon_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
     let crs = open_crs_for_log2_of_size(12);
-    let circuit_input = make_test_input_case1();
+    let input1 = read_point_le::<Fr>(&[1]).unwrap();
+    let input2 = read_point_le::<Fr>(&[2]).unwrap();
+    let inputs = vec![input1, input2];
+    // let output = read_point_le::<Fr>(&[
+    //   251, 230, 185, 64, 12, 136, 124, 164, 37, 71, 120, 65, 234, 225, 30, 7, 157, 148, 169, 225,
+    //   186, 183, 76, 63, 231, 241, 40, 189, 50, 55, 145, 23,
+    // ])
+    // .unwrap();
+    let circuit_input = make_test_input(inputs);
     let (_vk, _proof) = circuit_input.create_plonk_proof(crs)?;
     let file = OpenOptions::new()
       .write(true)
@@ -142,7 +132,17 @@ mod poseidon_api_tests {
   #[test]
   fn test_fr_poseidon_circuit_case2() -> Result<(), Box<dyn std::error::Error>> {
     let crs = open_crs_for_log2_of_size(12);
-    let circuit_input = make_test_input_case2();
+    let mut minus_one = Fr::one();
+    minus_one.negate();
+    let input1 = minus_one.clone();
+    let input2 = minus_one.clone();
+    let inputs = vec![input1, input2];
+    // let output = read_point_le::<Fr>(&[
+    //   139, 216, 105, 49, 182, 238, 242, 238, 71, 120, 119, 185, 65, 172, 205, 105, 49, 66, 1, 26,
+    //   106, 254, 169, 52, 165, 244, 248, 195, 74, 157, 173, 1,
+    // ])
+    // .unwrap();
+    let circuit_input = make_test_input(inputs);
     let _proof = circuit_input.create_plonk_proof(crs)?;
     // let file = OpenOptions::new()
     //   .write(true)
@@ -181,7 +181,19 @@ mod poseidon_api_tests {
 
   #[test]
   fn test_fr_poseidon_circuit_input_read_write() -> Result<(), Box<dyn std::error::Error>> {
-    let circuit_input = make_test_input_case1();
+    let input1 = read_point_le::<Fr>(&[1]).unwrap();
+    let input2 = read_point_le::<Fr>(&[2]).unwrap();
+    let inputs = vec![input1, input2];
+    let output = read_point_le::<Fr>(&[
+      251, 230, 185, 64, 12, 136, 124, 164, 37, 71, 120, 65, 234, 225, 30, 7, 157, 148, 169, 225,
+      186, 183, 76, 63, 231, 241, 40, 189, 50, 55, 145, 23,
+    ])
+    .unwrap();
+    let circuit_input: PoseidonCircuitInput<typenum::U2> = PoseidonCircuitInput {
+      inputs,
+      output,
+      _n: std::marker::PhantomData,
+    };
 
     let file_path = "tests/poseidon/public_inputs";
     let path = std::env::current_dir()?;
@@ -206,7 +218,19 @@ mod poseidon_api_tests {
 
   #[test]
   fn test_fr_poseidon_circuit_input_serde_json() -> Result<(), Box<dyn std::error::Error>> {
-    let circuit_input: PoseidonCircuitInput<U2> = make_test_input_case1();
+    let input1 = read_point_le::<Fr>(&[1]).unwrap();
+    let input2 = read_point_le::<Fr>(&[2]).unwrap();
+    let inputs = vec![input1, input2];
+    let output = read_point_le::<Fr>(&[
+      251, 230, 185, 64, 12, 136, 124, 164, 37, 71, 120, 65, 234, 225, 30, 7, 157, 148, 169, 225,
+      186, 183, 76, 63, 231, 241, 40, 189, 50, 55, 145, 23,
+    ])
+    .unwrap();
+    let circuit_input: PoseidonCircuitInput<typenum::U2> = PoseidonCircuitInput {
+      inputs,
+      output,
+      _n: std::marker::PhantomData,
+    };
 
     let file_path = "tests/poseidon/public_inputs.json";
     let path = std::env::current_dir()?;
@@ -222,7 +246,7 @@ mod poseidon_api_tests {
     println!("write circuit_input into {}", file_path);
 
     let raw = read_to_string(path)?;
-    let circuit_input2: PoseidonCircuitInput<U2> = serde_json::from_str(&raw)?;
+    let circuit_input2: PoseidonCircuitInput<typenum::U2> = serde_json::from_str(&raw)?;
     println!("read circuit_input2 from {}", file_path);
 
     assert_eq!(circuit_input, circuit_input2);
