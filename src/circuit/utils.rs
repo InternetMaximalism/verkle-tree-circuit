@@ -7,7 +7,7 @@ use franklin_crypto::bellman::pairing::ff::{PrimeField, PrimeFieldRepr};
 use franklin_crypto::bellman::pairing::Engine;
 use franklin_crypto::bellman::worker::Worker;
 
-pub fn read_point_le<F: PrimeField, R: Read>(reader: &mut R) -> anyhow::Result<F> {
+pub fn read_field_element_le<F: PrimeField, R: Read>(reader: &mut R) -> anyhow::Result<F> {
     let mut raw_value = F::Repr::default();
     raw_value.read_le(reader)?;
     let result = F::from_repr(raw_value)?;
@@ -15,7 +15,7 @@ pub fn read_point_le<F: PrimeField, R: Read>(reader: &mut R) -> anyhow::Result<F
     Ok(result)
 }
 
-pub fn read_point_be<F: PrimeField, R: Read>(reader: &mut R) -> anyhow::Result<F> {
+pub fn read_field_element_be<F: PrimeField, R: Read>(reader: &mut R) -> anyhow::Result<F> {
     let mut raw_value = F::Repr::default();
     raw_value.read_be(reader)?;
     let result = F::from_repr(raw_value)?;
@@ -23,7 +23,7 @@ pub fn read_point_be<F: PrimeField, R: Read>(reader: &mut R) -> anyhow::Result<F
     Ok(result)
 }
 
-pub fn write_point_le<F: PrimeField, W: Write>(
+pub fn write_field_element_le<F: PrimeField, W: Write>(
     value: F,
     writer: &mut W,
 ) -> Result<(), std::io::Error> {
@@ -32,7 +32,7 @@ pub fn write_point_le<F: PrimeField, W: Write>(
     Ok(())
 }
 
-pub fn write_point_be<F: PrimeField, W: Write>(
+pub fn write_field_element_be<F: PrimeField, W: Write>(
     value: F,
     writer: &mut W,
 ) -> Result<(), std::io::Error> {

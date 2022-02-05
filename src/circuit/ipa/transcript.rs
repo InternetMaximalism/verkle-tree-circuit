@@ -2,7 +2,7 @@ use franklin_crypto::bellman::{ConstraintSystem, SynthesisError};
 use franklin_crypto::circuit::num::AllocatedNum;
 use franklin_crypto::jubjub::JubjubEngine;
 
-use verkle_tree::ipa::utils::read_point_be;
+use verkle_tree::ipa::utils::read_field_element_be;
 
 pub trait Transcript<E: JubjubEngine>: Sized + Clone {
     fn new(init_state: Option<E::Fr>) -> Self;
@@ -147,7 +147,8 @@ impl<E: JubjubEngine> ArkCircuit<E> {
                     Ok(self.inputs[i].unwrap())
                     // self.inputs[i].ok_or(SynthesisError::UnconstrainedVariable)
                 })?;
-            let c = read_point_be::<E::Fr>(&hex::decode(&C[i + self.round][2..]).unwrap()).unwrap();
+            let c = read_field_element_be::<E::Fr>(&hex::decode(&C[i + self.round][2..]).unwrap())
+                .unwrap();
             let output_i =
                 inputs_i.add_constant(cs.namespace(|| format!("add inputs[{}] to c", i)), c)?;
             self.outputs[i] = output_i.get_value();
@@ -183,7 +184,8 @@ impl<E: JubjubEngine> MixCircuit<E> {
         for i in 0..self.width {
             let mut lc = zero.clone();
             for (j, inputs_j) in self.inputs.iter().enumerate() {
-                let m = read_point_be::<E::Fr>(&hex::decode(&M[j][i][2..]).unwrap()).unwrap();
+                let m =
+                    read_field_element_be::<E::Fr>(&hex::decode(&M[j][i][2..]).unwrap()).unwrap();
                 let wrapped_m = AllocatedNum::alloc(
                     cs.namespace(|| format!("allocate M[{}][{}]", j, i)),
                     || Ok(m),
@@ -327,7 +329,7 @@ impl<E: JubjubEngine> PoseidonCircuit<E> {
 
         // last round is done only for the first word, so we do it manually to save constraints
         let mut last_sigma_f = SigmaCircuit::default();
-        let c = read_point_be::<E::Fr>(
+        let c = read_field_element_be::<E::Fr>(
             &hex::decode(&C[self.width * (N_ROUNDS_F + N_ROUNDS_P - 1)][2..]).unwrap(),
         )
         .unwrap();

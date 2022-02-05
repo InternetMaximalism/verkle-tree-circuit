@@ -2,14 +2,11 @@ use std::io::{Error, ErrorKind};
 
 use franklin_crypto::bellman::pairing::Engine;
 use franklin_crypto::bellman::plonk::better_better_cs::cs::ConstraintSystem;
-use franklin_crypto::bellman::{SynthesisError};
-// use franklin_crypto::circuit::ecc::EdwardsPoint;
+use franklin_crypto::bellman::SynthesisError;
 use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::AuxData;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::WrappedAffinePoint;
-
-use super::rns::BaseRnsParameters;
-// use franklin_crypto::jubjub::JubjubEngine;
+use verkle_tree::ipa_fr::rns::BaseRnsParameters;
 
 // Computes c[i] = a[i] + b[i] * x
 // returns c

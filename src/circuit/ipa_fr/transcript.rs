@@ -9,7 +9,7 @@ use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::Wra
 
 use crate::circuit::poseidon::calc_poseidon;
 
-use verkle_tree::ipa_fr::utils::write_point_le;
+use verkle_tree::ipa_fr::utils::write_field_element_le;
 
 pub trait Transcript<E: Engine>: Sized + Clone {
     fn new(init_state: AllocatedNum<E>) -> Self;
@@ -63,7 +63,7 @@ impl<E: Engine> WrappedTranscript<E> {
     //   let chunk_size = (E::Fr::NUM_BITS / 8) as usize;
     //   assert!(chunk_size != 0);
     //   assert!(bytes.len() <= chunk_size);
-    //   let element = read_point_le::<E::Fr>(&bytes).unwrap();
+    //   let element = read_field_element_le::<E::Fr>(&bytes).unwrap();
 
     //   Self {
     //     state: element.clone(),
@@ -104,7 +104,7 @@ impl<E: Engine> WrappedTranscript<E> {
         element: FieldElement<'a, E, F>,
     ) -> Result<(), SynthesisError> {
         let value_bits = if let Some(value) = element.get_field_value() {
-            write_point_le(&value)
+            write_field_element_le(&value)
                 .iter()
                 .flat_map(|x| {
                     let mut x_bits = vec![];
