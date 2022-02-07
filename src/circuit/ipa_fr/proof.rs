@@ -1,4 +1,4 @@
-use franklin_crypto::bellman::{CurveAffine, SynthesisError};
+use franklin_crypto::bellman::{CurveAffine, CurveProjective, SynthesisError};
 // use franklin_crypto::circuit::ecc::EdwardsPoint;
 use franklin_crypto::bellman::pairing::Engine;
 use franklin_crypto::bellman::plonk::better_better_cs::cs::ConstraintSystem;
@@ -6,24 +6,18 @@ use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
 use franklin_crypto::plonk::circuit::bigint::field::RnsParameters;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::AuxData;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::WrappedAffinePoint;
+use verkle_tree::ipa_fr::proof::IpaProof;
 
 use super::transcript::{Transcript, WrappedTranscript};
 
-#[derive(Clone, Debug)]
-pub struct IpaProof<E: Engine> {
-    pub l: Vec<E::G1Affine>,
-    pub r: Vec<E::G1Affine>,
-    pub a: E::Fr,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OptionIpaProof<G: CurveProjective> {
+    pub l: Vec<Option<G::Affine>>,
+    pub r: Vec<Option<G::Affine>>,
+    pub a: Option<G::Scalar>,
 }
 
-#[derive(Clone)]
-pub struct OptionIpaProof<E: Engine> {
-    pub l: Vec<Option<E::G1Affine>>,
-    pub r: Vec<Option<E::G1Affine>>,
-    pub a: Option<E::Fr>,
-}
-
-impl<E: Engine> OptionIpaProof<E> {
+impl<G: CurveProjective> OptionIpaProof<G> {
     pub fn with_depth(depth: usize) -> Self {
         Self {
             l: vec![None; depth],
@@ -33,8 +27,8 @@ impl<E: Engine> OptionIpaProof<E> {
     }
 }
 
-impl<E: Engine> From<IpaProof<E>> for OptionIpaProof<E> {
-    fn from(ipa_proof: IpaProof<E>) -> Self {
+impl<G: CurveProjective> From<IpaProof<G>> for OptionIpaProof<G> {
+    fn from(ipa_proof: IpaProof<G>) -> Self {
         Self {
             l: ipa_proof.l.iter().map(|&l| Some(l)).collect::<Vec<_>>(),
             r: ipa_proof.r.iter().map(|&r| Some(r)).collect::<Vec<_>>(),
@@ -51,7 +45,7 @@ pub fn generate_challenges<
     AD: AuxData<E>,
 >(
     cs: &mut CS,
-    ipa_proof: OptionIpaProof<E>,
+    ipa_proof: OptionIpaProof<E::G1>,
     transcript: &mut WrappedTranscript<E>,
     rns_params: &'a RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
     aux_data: &AD,

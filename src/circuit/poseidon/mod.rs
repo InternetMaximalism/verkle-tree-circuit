@@ -7,7 +7,7 @@ use franklin_crypto::bellman::SynthesisError;
 use franklin_crypto::circuit::Assignment;
 use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
 use generic_array::{typenum::*, ArrayLength, GenericArray};
-use verkle_tree::ipa_fr::utils::{read_point_be, read_point_le};
+use verkle_tree::ipa_fr::utils::{read_field_element_be, read_field_element_le};
 
 /// This is the circuit implementation of the Poseidon hash function.
 /// * `width` is also known as the parameter `t`.
@@ -114,7 +114,7 @@ where
     CS: ConstraintSystem<E>,
 {
     let reader = hex::decode(&C[r][2..]).unwrap();
-    let c = read_point_be::<E::Fr>(&reader).unwrap();
+    let c = read_field_element_be::<E::Fr>(&reader).unwrap();
     let output = input.add_constant(cs, c)?;
 
     Ok(output)
@@ -138,7 +138,7 @@ where
         for j in 0..T {
             let m_reader = hex::decode(&m[j][i][2..]).unwrap();
             let wrapped_m =
-                AllocatedNum::alloc_cnst(cs, read_point_be::<E::Fr>(&m_reader).unwrap())?;
+                AllocatedNum::alloc_cnst(cs, read_field_element_be::<E::Fr>(&m_reader).unwrap())?;
             let tmp = inputs[j].mul(cs, &wrapped_m)?; // tmp = inputs[j] * M[j][i]
             lc = lc.add(cs, &tmp)?;
         }
@@ -164,7 +164,7 @@ where
 //   // First column is dense.
 //   for (i, val) in m.w_hat.iter().enumerate() {
 //     let m_reader = hex::decode(&val[2..]).unwrap();
-//     let wrapped_m = AllocatedNum::alloc_cnst(cs, read_point_be::<E::Fr>(&m_reader).unwrap())?;
+//     let wrapped_m = AllocatedNum::alloc_cnst(cs, read_field_element_be::<E::Fr>(&m_reader).unwrap())?;
 //     let tmp = wrapped_m.mul(cs, &inputs[i])?;
 //     result[0].add(cs, &tmp)?;
 //   }
@@ -175,7 +175,7 @@ where
 
 //     // First row is dense.
 //     let m_reader = hex::decode(&m.v_rest[j - 1][2..]).unwrap();
-//     let wrapped_m = AllocatedNum::alloc_cnst(cs, read_point_be::<E::Fr>(&m_reader).unwrap())?;
+//     let wrapped_m = AllocatedNum::alloc_cnst(cs, read_field_element_be::<E::Fr>(&m_reader).unwrap())?;
 //     let new_val = wrapped_m.mul(cs, &inputs[0])?.add(cs, &tmp)?;
 //     let _old_val = std::mem::replace(val, new_val);
 //   }
@@ -194,7 +194,7 @@ where
     let input_num = T - 1;
     assert_eq!(inputs.len(), input_num, "invalid inputs length");
 
-    let domain_tag = read_point_le::<E::Fr>(&[3]).unwrap();
+    let domain_tag = read_field_element_le::<E::Fr>(&[3]).unwrap();
     let wrapped_domain_tag = AllocatedNum::alloc_cnst(cs, domain_tag)?;
     let mut elements = vec![wrapped_domain_tag];
     elements.append(&mut inputs.to_vec());

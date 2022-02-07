@@ -6,7 +6,7 @@ use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr};
 // use serde::{Deserialize, Serialize};
 
 use crate::circuit::ipa::proof::IpaProof;
-use crate::circuit::utils::read_point_le;
+use crate::circuit::utils::read_field_element_le_from;
 
 pub struct CircuitInput {
     pub commitment: Option<(Fr, Fr)>,
@@ -32,29 +32,29 @@ impl CircuitInput {
 
     pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
         let reader = &mut std::io::Cursor::new(bytes.to_vec());
-        let commitment_x: Fr = read_point_le(reader)?;
-        let commitment_y: Fr = read_point_le(reader)?;
+        let commitment_x: Fr = read_field_element_le_from(reader)?;
+        let commitment_y: Fr = read_field_element_le_from(reader)?;
         let n = reader.read_u64::<LittleEndian>()?;
         let mut proof_l = vec![];
         for _ in 0..n {
-            let lix: Fr = read_point_le(reader)?;
-            let liy: Fr = read_point_le(reader)?;
+            let lix: Fr = read_field_element_le_from(reader)?;
+            let liy: Fr = read_field_element_le_from(reader)?;
             proof_l.push((lix, liy));
         }
         let mut proof_r = vec![];
         for _ in 0..n {
-            let rix: Fr = read_point_le(reader)?;
-            let riy: Fr = read_point_le(reader)?;
+            let rix: Fr = read_field_element_le_from(reader)?;
+            let riy: Fr = read_field_element_le_from(reader)?;
             proof_r.push((rix, riy));
         }
-        let proof_a: Fr = read_point_le(reader)?;
+        let proof_a: Fr = read_field_element_le_from(reader)?;
         let proof = IpaProof {
             l: proof_l,
             r: proof_r,
             a: proof_a,
         };
-        let eval_point: Fr = read_point_le(reader)?;
-        let inner_prod: Fr = read_point_le(reader)?;
+        let eval_point: Fr = read_field_element_le_from(reader)?;
+        let inner_prod: Fr = read_field_element_le_from(reader)?;
         let input = Self {
             commitment: Some((commitment_x, commitment_y)),
             proof: Some(proof),

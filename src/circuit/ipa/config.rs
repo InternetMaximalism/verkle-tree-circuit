@@ -4,7 +4,7 @@ use franklin_crypto::bellman::{ConstraintSystem, Field, PrimeField, SynthesisErr
 use franklin_crypto::circuit::num::AllocatedNum;
 use franklin_crypto::jubjub::JubjubEngine;
 
-use verkle_tree::ipa::utils::read_point_le;
+use verkle_tree::ipa::utils::read_field_element_le;
 
 #[derive(Clone, Debug)]
 pub struct PrecomputedWeights<F: PrimeField> {
@@ -111,7 +111,7 @@ pub fn compute_barycentric_coefficients<E: JubjubEngine, CS: ConstraintSystem<E>
             Ok(precomputed_weights.barycentric_weights[i])
         })?;
         let wrapped_i = AllocatedNum::alloc(cs.namespace(|| "alloc i"), || {
-            Ok(read_point_le(&i.to_le_bytes()).unwrap())
+            Ok(read_field_element_le(&i.to_le_bytes()).unwrap())
         })?;
         let mut eval = point.clone();
         eval = eval.sub(cs.namespace(|| "sub eval to i"), &wrapped_i)?;
@@ -122,7 +122,7 @@ pub fn compute_barycentric_coefficients<E: JubjubEngine, CS: ConstraintSystem<E>
     let mut total_prod = AllocatedNum::one::<CS>();
     for i in 0..DOMAIN_SIZE {
         let wrapped_i = AllocatedNum::alloc(cs.namespace(|| "alloc i"), || {
-            Ok(read_point_le(&i.to_le_bytes()).unwrap())
+            Ok(read_field_element_le(&i.to_le_bytes()).unwrap())
         })?;
         let mut tmp = point.clone();
         tmp = tmp.sub(cs.namespace(|| "sub tmp to i"), &wrapped_i)?;

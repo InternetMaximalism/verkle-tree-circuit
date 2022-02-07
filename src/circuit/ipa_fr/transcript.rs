@@ -4,12 +4,12 @@ use franklin_crypto::bellman::plonk::better_better_cs::cs::ConstraintSystem;
 use franklin_crypto::bellman::{PrimeField, SynthesisError};
 use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
 use franklin_crypto::plonk::circuit::bigint::field::FieldElement;
-use franklin_crypto::plonk::circuit::boolean::{AllocatedBit, Boolean};
+use franklin_crypto::plonk::circuit::boolean::AllocatedBit;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::WrappedAffinePoint;
 
 use crate::circuit::poseidon::calc_poseidon;
 
-use verkle_tree::ipa_fr::utils::write_point_le;
+use verkle_tree::ipa_fr::utils::{read_field_element_le, write_field_element_le};
 
 pub trait Transcript<E: Engine>: Sized + Clone {
     fn new(init_state: AllocatedNum<E>) -> Self;
@@ -63,7 +63,7 @@ impl<E: Engine> WrappedTranscript<E> {
     //   let chunk_size = (E::Fr::NUM_BITS / 8) as usize;
     //   assert!(chunk_size != 0);
     //   assert!(bytes.len() <= chunk_size);
-    //   let element = read_point_le::<E::Fr>(&bytes).unwrap();
+    //   let element = read_field_element_le::<E::Fr>(&bytes).unwrap();
 
     //   Self {
     //     state: element.clone(),
@@ -75,14 +75,39 @@ impl<E: Engine> WrappedTranscript<E> {
         cs: &mut CS,
         bytes: Vec<AllocatedBit>,
     ) -> Result<(), SynthesisError> {
-        let chunk_size = E::Fr::NUM_BITS as usize;
+        // TODO: constraint more strictly.
+        let chunk_size = ((E::Fr::NUM_BITS / 8) * 8) as usize;
         assert!(chunk_size != 0);
-        for b in bytes
-        /* bytes.chunks(chunk_size) */
-        {
-            let element = AllocatedNum::from_boolean_is(Boolean::from(b));
+        for b in bytes.chunks(chunk_size) {
+            let value = b
+                .iter()
+                .map(|x| x.get_value())
+                .collect::<Option<Vec<_>>>()
+                .and_then(|x| {
+                    let mut bytes = vec![];
+                    for bits in x.chunks(8) {
+                        let mut byte = if *bits.first().unwrap() { 1 } else { 0 };
+                        let mut power = 1u8;
+                        for b in bits.iter().skip(1) {
+                            power *= 2;
+                            if *b {
+                                byte += power;
+                            }
+                        }
+
+                        bytes.push(byte);
+                    }
+
+                    read_field_element_le::<E::Fr>(&bytes).ok()
+                });
+            let element = AllocatedNum::alloc(cs, || Ok(value.unwrap()))?;
             self.commit_alloc_num(cs, element)?;
         }
+
+        // for b in bytes {
+        //     let element = AllocatedNum::from_boolean_is(Boolean::from(b));
+        //     self.commit_alloc_num(cs, element)?;
+        // }
 
         Ok(())
     }
@@ -104,7 +129,7 @@ impl<E: Engine> WrappedTranscript<E> {
         element: FieldElement<'a, E, F>,
     ) -> Result<(), SynthesisError> {
         let value_bits = if let Some(value) = element.get_field_value() {
-            write_point_le(&value)
+            write_field_element_le(&value)
                 .iter()
                 .flat_map(|x| {
                     let mut x_bits = vec![];
