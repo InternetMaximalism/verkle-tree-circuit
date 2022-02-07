@@ -7,7 +7,7 @@ use franklin_crypto::bellman::groth16::{create_random_proof, Parameters};
 use franklin_crypto::bellman::pairing::bn256::Bn256;
 
 use crate::circuit::sample::SampleCircuit;
-use crate::circuit::utils::write_field_element_le;
+use crate::circuit::utils::write_field_element_le_into;
 
 use super::input::CircuitInput;
 
@@ -29,7 +29,7 @@ pub fn create_random_proof_with_file(
     let public_wires_bytes = vec![];
     let mut writer = std::io::Cursor::new(public_wires_bytes);
     for public_wire in public_wires {
-        write_field_element_le(public_wire, &mut writer)?;
+        write_field_element_le_into(public_wire, &mut writer)?;
     }
     let public_wires_bytes = writer.into_inner();
     let mut public_wires_file = OpenOptions::new()

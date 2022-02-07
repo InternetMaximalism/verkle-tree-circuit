@@ -4,8 +4,9 @@ use franklin_crypto::bellman::pairing::Engine;
 use franklin_crypto::bellman::plonk::better_better_cs::cs::{
     Circuit, ConstraintSystem, Gate, GateInternal, Width4MainGateWithDNext,
 };
-use franklin_crypto::bellman::{CurveAffine, Field, SynthesisError};
+use franklin_crypto::bellman::{Field, SynthesisError};
 use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
+use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::AuxData;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::WrappedAffinePoint;
 use verkle_tree::ipa_fr::config::IpaConfig;
@@ -37,23 +38,22 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
     fn declare_used_gates() -> Result<Vec<Box<dyn GateInternal<E>>>, SynthesisError> {
         Ok(vec![
             Self::MainGate::default().into_internal(),
-            // TwoBitDecompositionRangecheckCustomGate::default().into_internal(),
+            TwoBitDecompositionRangecheckCustomGate::default().into_internal(),
         ])
     }
 
     fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
         let transcript_params = AllocatedNum::alloc(cs, || Ok(self.transcript_params.unwrap()))?;
         let mut transcript = WrappedTranscript::new(transcript_params);
-        // transcript.consume("ipa", cs);
 
-        // println!("{:?}", self.proof);
         if self.proof.l.len() != self.proof.r.len() {
             return Err(
                 Error::new(ErrorKind::InvalidData, "L and R should be the same size").into(),
             );
         }
 
-        if self.proof.l.len() != self.ipa_conf.num_ipa_rounds {
+        let num_rounds = self.ipa_conf.precomputed_weights.num_ipa_rounds as usize;
+        if self.proof.l.len() != num_rounds {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 "The number of points for L or R should be equal to the number of rounds",
@@ -72,16 +72,12 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
         let mut commitment = WP::alloc(cs, self.commitment, self.rns_params, &self.aux_data)?;
 
         // let bit_limit = None; // Some(256usize);
-        let b: Vec<E::Fr> =
-            compute_barycentric_coefficients::<E, <E::G1Affine as CurveAffine>::Scalar>(
-                &self.ipa_conf.precomputed_weights,
-                &eval_point.get_value().unwrap(),
-            ) // TODO: constraints of compute_barycentric_coefficients
-            .unwrap();
-        let mut b = b
-            .iter()
-            .map(|x| AllocatedNum::alloc_cnst(cs, *x))
-            .collect::<Result<Vec<_>, SynthesisError>>()?;
+        let mut b = compute_barycentric_coefficients::<E, CS>(
+            cs,
+            &self.ipa_conf.precomputed_weights,
+            &eval_point,
+        )
+        .unwrap();
 
         if b.len() != self.ipa_conf.srs.len() {
             return Err(Error::new(

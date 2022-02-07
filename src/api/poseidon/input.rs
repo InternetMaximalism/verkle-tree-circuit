@@ -23,7 +23,8 @@ use crate::circuit::poseidon::PoseidonCircuit;
 // use serde::{Deserialize, Serialize};
 
 use crate::circuit::utils::{
-    read_field_element_be, read_field_element_le, write_field_element_be, write_field_element_le,
+    read_field_element_be_from, read_field_element_le_from, write_field_element_be_into,
+    write_field_element_le_into,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -354,10 +355,10 @@ impl<N: ArrayLength<Option<Fr>>> PoseidonCircuitInput<N> {
 
         let mut inputs = vec![];
         for _ in 1..width {
-            let input = read_field_element_le(reader)?;
+            let input = read_field_element_le_from(reader)?;
             inputs.push(input);
         }
-        let output = read_field_element_le(reader)?;
+        let output = read_field_element_le_from(reader)?;
         let circuit_input = Self {
             inputs,
             output,
@@ -374,9 +375,9 @@ impl<N: ArrayLength<Option<Fr>>> PoseidonCircuitInput<N> {
 
         writer.write_u8(width as u8)?;
         for i in 0..N::to_usize() {
-            write_field_element_le(self.inputs[i], writer)?;
+            write_field_element_le_into(self.inputs[i], writer)?;
         }
-        write_field_element_le(self.output, writer)?;
+        write_field_element_le_into(self.output, writer)?;
 
         Ok(())
     }
@@ -422,14 +423,14 @@ impl<N: ArrayLength<Option<Fr>>> Serialize for PoseidonCircuitInput<N> {
         let mut serializable_inputs = vec![];
         for i in 0..self.inputs.len() {
             let writer = &mut vec![];
-            write_field_element_be(self.inputs[i], writer).unwrap();
+            write_field_element_be_into(self.inputs[i], writer).unwrap();
             let result = "0x".to_string() + &hex::encode(writer);
             serializable_inputs.push(result);
         }
 
         let serializable_output = {
             let writer = &mut vec![];
-            write_field_element_be(self.output, writer).unwrap();
+            write_field_element_be_into(self.output, writer).unwrap();
 
             "0x".to_string() + &hex::encode(writer)
         };
@@ -453,14 +454,14 @@ impl<'de, N: ArrayLength<Option<Fr>>> Deserialize<'de> for PoseidonCircuitInput<
         let mut deserialized_inputs = vec![];
         for input in raw.inputs {
             let reader = &mut std::io::Cursor::new(hex::decode(input[2..].as_bytes()).unwrap());
-            let input = read_field_element_be(reader).unwrap();
+            let input = read_field_element_be_from(reader).unwrap();
             deserialized_inputs.push(input);
         }
 
         let deserialized_output = {
             let reader =
                 &mut std::io::Cursor::new(hex::decode(raw.output[2..].as_bytes()).unwrap());
-            read_field_element_be(reader).unwrap()
+            read_field_element_be_from(reader).unwrap()
         };
 
         let result = Self {

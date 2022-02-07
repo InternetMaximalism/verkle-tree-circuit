@@ -2,7 +2,7 @@ use std::io::{Error, ErrorKind};
 
 use franklin_crypto::bellman::pairing::Engine;
 use franklin_crypto::bellman::plonk::better_better_cs::cs::ConstraintSystem;
-use franklin_crypto::bellman::SynthesisError;
+use franklin_crypto::bellman::{CurveAffine, SynthesisError};
 use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::AuxData;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::WrappedAffinePoint;
@@ -55,7 +55,7 @@ pub fn fold_points<
         .iter()
         .enumerate()
         .map(|(i, v)| {
-            let mut tmp = v.clone().mul(cs, x, None, rns_params, aux_data)?;
+            let mut tmp = v.clone().mul::<CS, AD>(cs, x, None, rns_params, aux_data)?;
             let result = tmp.add(cs, &mut a[i].clone(), rns_params)?;
 
             Ok(result)
@@ -78,13 +78,21 @@ pub fn multi_scalar<
     rns_params: &'a BaseRnsParameters<E>,
     aux_data: &AD,
 ) -> Result<WP, SynthesisError> {
-    let mut wrapped_result = WP::zero(rns_params);
+    let mut wrapped_result = WP::alloc(
+        cs,
+        Some(<E::G1Affine as CurveAffine>::one()),
+        rns_params,
+        aux_data,
+    )?;
     for i in 0..points.len() {
-        let mut tmp = points[i]
-            .clone()
-            .mul(cs, &scalars[i], None, rns_params, aux_data)?; // tmp = points[i] * scalars[i]
+        let mut tmp =
+            points[i]
+                .clone()
+                .mul::<CS, AD>(cs, &scalars[i], None, rns_params, aux_data)?; // tmp = points[i] * scalars[i]
         wrapped_result = wrapped_result.add(cs, &mut tmp, rns_params)?; // result += tmp
     }
+    let mut one = WP::alloc(cs, Some(E::G1Affine::one()), rns_params, aux_data)?;
+    wrapped_result = wrapped_result.sub(cs, &mut one, rns_params)?;
 
     Ok(wrapped_result)
 }

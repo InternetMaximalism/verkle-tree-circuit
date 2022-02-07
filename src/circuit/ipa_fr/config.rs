@@ -1,41 +1,42 @@
 use franklin_crypto::bellman::pairing::Engine;
+use franklin_crypto::bellman::plonk::better_better_cs::cs::ConstraintSystem;
 use franklin_crypto::bellman::{Field, PrimeField};
-use verkle_tree::ipa_fr::config::{PrecomputedWeights, DOMAIN_SIZE};
+use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
+use verkle_tree::ipa_fr::config::PrecomputedWeights;
 use verkle_tree::ipa_fr::utils::read_field_element_le;
 
-pub fn compute_barycentric_coefficients<E: Engine, F: PrimeField>(
-    precomputed_weights: &PrecomputedWeights<F>,
-    point: &F,
-) -> anyhow::Result<Vec<F>> {
-    // Compute A(x_i) * point - x_i
-    let mut lagrange_evals: Vec<F> = Vec::with_capacity(DOMAIN_SIZE);
-    let mut total_prod = F::one();
-    for i in 0..DOMAIN_SIZE {
-        let weight = precomputed_weights.barycentric_weights[i];
-        let mut tmp = read_field_element_le::<F>(&i.to_le_bytes())?;
-        tmp.sub_assign(point);
-        tmp.negate();
-        total_prod.mul_assign(&tmp); // total_prod *= (point - i)
+pub fn compute_barycentric_coefficients<E: Engine, CS: ConstraintSystem<E>>(
+    cs: &mut CS,
+    precomputed_weights: &PrecomputedWeights<E::Fr>,
+    point: &AllocatedNum<E>,
+) -> anyhow::Result<Vec<AllocatedNum<E>>> {
+    let domain_size = 2usize.pow(precomputed_weights.num_ipa_rounds as u32);
 
-        tmp.mul_assign(&weight);
+    // Compute A(x_i) * point - x_i
+    let mut lagrange_evals: Vec<AllocatedNum<E>> = Vec::with_capacity(domain_size);
+    let mut total_prod = AllocatedNum::<E>::one(cs);
+    for i in 0..domain_size {
+        let weight = AllocatedNum::<E>::alloc_cnst(cs, precomputed_weights.barycentric_weights[i])?;
+        let tmp_value = read_field_element_le::<E::Fr>(&i.to_le_bytes())?;
+        let tmp = AllocatedNum::<E>::alloc_cnst(cs, tmp_value)?;
+        let tmp = tmp.sub(cs, point)?;
+        let zero = AllocatedNum::<E>::zero(cs);
+        let tmp = zero.sub(cs, &tmp)?;
+        total_prod = total_prod.mul(cs, &tmp)?; // total_prod *= (point - i)
+
+        let tmp = tmp.mul(cs, &weight)?;
         lagrange_evals.push(tmp); // lagrange_evals[i] = (point - i) * weight
     }
 
     // TODO: Calculate the inverses of all elements together.
-    let mut lagrange_evals = {
-        let mut tmp = vec![];
-        for eval in lagrange_evals {
-            let inverse_of_eval = eval.inverse().ok_or(anyhow::anyhow!(
-                "cannot find inverse of `lagrange_evals[i]`"
-            ))?; // lagrange_evals[i] = 1 / ((point - i) * weight)
-            tmp.push(inverse_of_eval);
-        }
-
-        tmp
-    };
+    for eval in lagrange_evals.iter_mut() {
+        let tmp = eval.inverse(cs)?; // lagrange_evals[i] = 1 / ((point - i) * weight)
+        let _ = std::mem::replace(eval, tmp);
+    }
 
     for eval in lagrange_evals.iter_mut() {
-        eval.mul_assign(&total_prod); // lagrange_evals[i] = total_prod / ((point - i) * weight)
+        let tmp = eval.mul(cs, &total_prod)?; // lagrange_evals[i] = total_prod / ((point - i) * weight)
+        let _ = std::mem::replace(eval, tmp);
     }
 
     Ok(lagrange_evals)
@@ -77,11 +78,13 @@ pub fn divide_on_domain<E: Engine, F: PrimeField>(
     index: usize,
     f: &[F],
 ) -> Vec<F> {
-    let mut quotient = vec![<F as Field>::zero(); DOMAIN_SIZE];
+    let domain_size = 2usize.pow(precomputed_weights.num_ipa_rounds as u32);
+
+    let mut quotient = vec![<F as Field>::zero(); domain_size];
 
     let y = f[index];
 
-    for i in 0..DOMAIN_SIZE {
+    for i in 0..domain_size {
         if i != index {
             // den = i - index
             let (abs_den, is_neg) = sub_abs(i, index); // den = i - index

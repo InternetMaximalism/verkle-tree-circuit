@@ -36,7 +36,7 @@ use verkle_tree::ipa_fr::{
 
 use crate::circuit::ipa_fr::circuit::IpaCircuit;
 use crate::circuit::ipa_fr::proof::OptionIpaProof;
-use crate::circuit::utils::{read_field_element_le, write_field_element_le};
+use crate::circuit::utils::{read_field_element_le_from, write_field_element_le_into};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IpaCircuitInput {
@@ -52,7 +52,7 @@ mod ipa_api_tests {
     use std::io::Write;
     use std::path::Path;
 
-    use franklin_crypto::bellman::bn256::{G1, G1Affine};
+    use franklin_crypto::bellman::bn256::G1;
     use franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
     use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr};
     use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::without_flag_unchecked::WrapperUnchecked;
@@ -65,12 +65,12 @@ mod ipa_api_tests {
     use super::{IpaCircuitInput, VkAndProof};
 
     fn make_test_input(
-        commitment: G1Affine,
         poly: &[Fr],
         eval_point: Fr,
         transcript_params: Fr,
-        ipa_conf: IpaConfig<G1>,
+        ipa_conf: &IpaConfig<G1>,
     ) -> anyhow::Result<IpaCircuitInput> {
+        let commitment = ipa_conf.commit(&poly).unwrap();
         let proof =
             Bn256Ipa::create_proof(commitment, poly, eval_point, transcript_params, &ipa_conf)?;
 
@@ -88,7 +88,7 @@ mod ipa_api_tests {
     }
 
     fn open_crs_for_log2_of_size(_log2_n: usize) -> Crs<Bn256, CrsForMonomialForm> {
-        let full_path = Path::new("./tests/discrete_log/crs");
+        let full_path = Path::new("./tests/ipa/crs");
         println!("Opening {}", full_path.to_string_lossy());
         let file = File::open(full_path).unwrap();
         let reader = std::io::BufReader::with_capacity(1 << 24, file);
@@ -109,34 +109,35 @@ mod ipa_api_tests {
         let path = std::env::current_dir().unwrap();
         let path = path.join("tests/ipa/crs");
         let mut file = File::create(path).unwrap();
-        let crs = create_crs_for_log2_of_size(12); // < 4096 constraints (?)
+        let crs = create_crs_for_log2_of_size(21); // < 2097152 constraints (?)
         crs.write(&mut file).expect("must serialize CRS");
     }
 
     #[test]
     fn test_ipa_fr_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
-        let crs = open_crs_for_log2_of_size(12);
+        let crs = open_crs_for_log2_of_size(21);
         let eval_point: Fr = read_field_element_le(&123456789u64.to_le_bytes()).unwrap();
-        let ipa_conf = IpaConfig::<G1>::new();
+        let domain_size = 2;
+        let ipa_conf = IpaConfig::<G1>::new(domain_size);
 
         // Prover view
-        let poly = test_poly::<Fr>(&[12, 97, 37, 0, 1, 208, 132, 3]);
-        let commitment = ipa_conf.commit(&poly).unwrap();
-
+        let poly = vec![12, 97];
+        // let poly = vec![12, 97, 37, 0, 1, 208, 132, 3];
+        let padded_poly = test_poly::<Fr>(&poly, domain_size);
         let prover_transcript = PoseidonBn256Transcript::with_bytes(b"ipa");
 
-        // let output = read_field_element_le::<Fr>(&[
+        // let output = read_field_element_le_from::<Fr>(&[
         //   251, 230, 185, 64, 12, 136, 124, 164, 37, 71, 120, 65, 234, 225, 30, 7, 157, 148, 169, 225,
         //   186, 183, 76, 63, 231, 241, 40, 189, 50, 55, 145, 23,
         // ])
         // .unwrap();
         let circuit_input = make_test_input(
-            commitment,
-            &poly,
+            &padded_poly,
             eval_point,
             prover_transcript.into_params(),
-            ipa_conf.clone(),
+            &ipa_conf,
         )?;
+
         let rns_params = BaseRnsParameters::<Bn256>::new_for_field(68, 110, 4);
         let VkAndProof(_vk, _proof) = circuit_input
             .create_plonk_proof::<WrapperUnchecked<'_, Bn256>>(
@@ -164,26 +165,27 @@ mod ipa_api_tests {
     #[test]
     fn test_ipa_fr_circuit_input_read_write() -> Result<(), Box<dyn std::error::Error>> {
         let eval_point: Fr = read_field_element_le(&123456789u64.to_le_bytes()).unwrap();
-        let ipa_conf = &IpaConfig::<G1>::new();
+        let domain_size = 8;
+        let ipa_conf = IpaConfig::<G1>::new(domain_size);
 
         // Prover view
-        let poly = test_poly::<Fr>(&[12, 97, 37, 0, 1, 208, 132, 3]);
-        let commitment = ipa_conf.commit(&poly).unwrap();
-
+        let poly = vec![12, 97, 37, 0, 1, 208, 132, 3];
+        let padded_poly = test_poly::<Fr>(&poly, domain_size);
+        let commitment = ipa_conf.commit(&padded_poly).unwrap();
         let prover_transcript = PoseidonBn256Transcript::with_bytes(b"ipa");
 
         let proof = Bn256Ipa::create_proof(
             commitment,
-            &poly,
+            &padded_poly,
             eval_point,
             prover_transcript.into_params(),
-            ipa_conf,
+            &ipa_conf,
         )?;
 
         let lagrange_coeffs = ipa_conf
             .precomputed_weights
             .compute_barycentric_coefficients(&eval_point)?;
-        let ip = inner_prod(&poly, &lagrange_coeffs)?;
+        let ip = inner_prod(&padded_poly, &lagrange_coeffs)?;
 
         let circuit_input = IpaCircuitInput {
             commitment,
@@ -220,26 +222,27 @@ mod ipa_api_tests {
     #[test]
     fn test_ipa_fr_circuit_input_serde_json() -> Result<(), Box<dyn std::error::Error>> {
         let eval_point: Fr = read_field_element_le(&123456789u64.to_le_bytes()).unwrap();
-        let ipa_conf = &IpaConfig::<G1>::new();
+        let domain_size = 8;
+        let ipa_conf = IpaConfig::<G1>::new(domain_size);
 
         // Prover view
-        let poly = test_poly::<Fr>(&[12, 97, 37, 0, 1, 208, 132, 3]);
-        let commitment = ipa_conf.commit(&poly).unwrap();
-
+        let poly = vec![12, 97, 37, 0, 1, 208, 132, 3];
+        let padded_poly = test_poly::<Fr>(&poly, domain_size);
+        let commitment = ipa_conf.commit(&padded_poly).unwrap();
         let prover_transcript = PoseidonBn256Transcript::with_bytes(b"ipa");
 
         let proof = Bn256Ipa::create_proof(
             commitment,
-            &poly,
+            &padded_poly,
             eval_point,
             prover_transcript.into_params(),
-            ipa_conf,
+            &ipa_conf,
         )?;
 
         let lagrange_coeffs = ipa_conf
             .precomputed_weights
             .compute_barycentric_coefficients(&eval_point)?;
-        let ip = inner_prod(&poly, &lagrange_coeffs)?;
+        let ip = inner_prod(&padded_poly, &lagrange_coeffs)?;
 
         let file_path = "tests/ipa/public_inputs.json";
         let path = std::env::current_dir()?;
@@ -372,33 +375,33 @@ impl IpaCircuitInput {
 
     /// `[width, input[0], ..., inputs[t - 2], output]` -> `CircuitInput`
     pub fn read_from<R: Read>(reader: &mut R) -> anyhow::Result<Self> {
-        let commitment_x = read_field_element_le(reader)?;
-        let commitment_y = read_field_element_le(reader)?;
+        let commitment_x = read_field_element_le_from(reader)?;
+        let commitment_y = read_field_element_le_from(reader)?;
         let commitment = G1Affine::from_xy_checked(commitment_x, commitment_y)?;
         let num_ipa_rounds = reader.read_u16::<LittleEndian>()?;
 
         let mut proof_ls = vec![];
         for _ in 0..num_ipa_rounds {
-            let l_x = read_field_element_le(reader)?;
-            let l_y = read_field_element_le(reader)?;
+            let l_x = read_field_element_le_from(reader)?;
+            let l_y = read_field_element_le_from(reader)?;
             let l = G1Affine::from_xy_checked(l_x, l_y)?;
             proof_ls.push(l);
         }
         let mut proof_rs = vec![];
         for _ in 0..num_ipa_rounds {
-            let r_x = read_field_element_le(reader)?;
-            let r_y = read_field_element_le(reader)?;
+            let r_x = read_field_element_le_from(reader)?;
+            let r_y = read_field_element_le_from(reader)?;
             let r = G1Affine::from_xy_checked(r_x, r_y)?;
             proof_rs.push(r);
         }
-        let proof_a = read_field_element_le(reader)?;
+        let proof_a = read_field_element_le_from(reader)?;
         let proof = IpaProof {
             l: proof_ls,
             r: proof_rs,
             a: proof_a,
         };
-        let eval_point = read_field_element_le(reader)?;
-        let inner_prod = read_field_element_le(reader)?;
+        let eval_point = read_field_element_le_from(reader)?;
+        let inner_prod = read_field_element_le_from(reader)?;
 
         let result = Self {
             commitment,
@@ -413,24 +416,24 @@ impl IpaCircuitInput {
     /// `CircuitInput` -> `[t, input[0], ..., inputs[t - 2], output]`
     pub fn write_into<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
         let (commitment_x, commitment_y) = self.commitment.into_xy_unchecked();
-        write_field_element_le(commitment_x, writer)?;
-        write_field_element_le(commitment_y, writer)?;
+        write_field_element_le_into(commitment_x, writer)?;
+        write_field_element_le_into(commitment_y, writer)?;
         let num_ipa_rounds = self.proof.l.len();
         assert!(num_ipa_rounds <= u16::MAX as usize);
         writer.write_u16::<LittleEndian>(num_ipa_rounds as u16)?;
         for l in self.proof.l.iter() {
             let (l_x, l_y) = l.into_xy_unchecked();
-            write_field_element_le(l_x, writer)?;
-            write_field_element_le(l_y, writer)?;
+            write_field_element_le_into(l_x, writer)?;
+            write_field_element_le_into(l_y, writer)?;
         }
         for r in self.proof.r.iter() {
             let (r_x, r_y) = r.into_xy_unchecked();
-            write_field_element_le(r_x, writer)?;
-            write_field_element_le(r_y, writer)?;
+            write_field_element_le_into(r_x, writer)?;
+            write_field_element_le_into(r_y, writer)?;
         }
-        write_field_element_le(self.proof.a, writer)?;
-        write_field_element_le(self.eval_point, writer)?;
-        write_field_element_le(self.inner_prod, writer)?;
+        write_field_element_le_into(self.proof.a, writer)?;
+        write_field_element_le_into(self.eval_point, writer)?;
+        write_field_element_le_into(self.inner_prod, writer)?;
 
         Ok(())
     }
