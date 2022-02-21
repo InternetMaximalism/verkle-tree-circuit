@@ -3,9 +3,14 @@
 ## Environment
 
 ```sh
-cargo --version # >= 1.56.0
 rustup override set nightly
-rustup update nightly
+cargo --version # >= 1.56.0
+```
+
+```
+git clone git@github.com:InternetMaximalism/verkle-tree-circuit.git
+git submodule init
+git submodule update
 ```
 
 ## How to test
