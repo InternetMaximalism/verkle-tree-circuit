@@ -4,7 +4,7 @@ use franklin_crypto::bellman::{ConstraintSystem, Field, PrimeField, SynthesisErr
 use franklin_crypto::circuit::num::AllocatedNum;
 use franklin_crypto::jubjub::JubjubEngine;
 
-use verkle_tree::ipa::utils::read_field_element_le;
+use verkle_tree::ipa_fr::utils::read_field_element_le;
 
 #[derive(Clone, Debug)]
 pub struct PrecomputedWeights<F: PrimeField> {
@@ -133,10 +133,6 @@ pub fn compute_barycentric_coefficients<E: JubjubEngine, CS: ConstraintSystem<E>
     minus_one.negate();
 
     for eval in lagrange_evals.iter_mut() {
-        // TODO: there was no batch inversion API.
-        // TODO: once we fully switch over to bandersnatch
-        // TODO: we can switch to batch invert API
-
         let tmp: AllocatedNum<E> =
             eval.pow(cs.namespace(|| "inverse lagrange_evals[i]"), &minus_one)?;
         let tmp = tmp.mul(

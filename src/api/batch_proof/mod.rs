@@ -1,5 +1,5 @@
 pub mod input;
-pub mod setup;
+// pub mod setup;
 
 // #[test]
 // fn test_batch_proof_circuit() -> Result<(), Box<dyn std::error::Error>> {

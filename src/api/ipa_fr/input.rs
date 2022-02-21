@@ -32,6 +32,7 @@ use verkle_tree::ipa_fr::{
     config::IpaConfig,
     proof::{IpaProof, SerializableIpaProof},
     rns::BaseRnsParameters,
+    utils::log2_ceil,
 };
 
 use crate::circuit::ipa_fr::circuit::IpaCircuit;
@@ -40,10 +41,10 @@ use crate::circuit::utils::{read_field_element_le_from, write_field_element_le_i
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IpaCircuitInput {
-    pub(crate) commitment: G1Affine,
-    pub(crate) proof: IpaProof<G1>,
-    pub(crate) eval_point: Fr,
-    pub(crate) inner_prod: Fr,
+    pub commitment: G1Affine,
+    pub proof: IpaProof<G1>,
+    pub eval_point: Fr,
+    pub inner_prod: Fr,
 }
 
 #[cfg(test)]
@@ -56,13 +57,15 @@ mod ipa_api_tests {
     use franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
     use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr};
     use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::without_flag_unchecked::WrapperUnchecked;
-    use verkle_tree::ipa_fr::config::IpaConfig;
+    use verkle_tree::ipa_fr::config::{IpaConfig, Committer};
     use verkle_tree::ipa_fr::rns::BaseRnsParameters;
     use verkle_tree::ipa_fr::{Bn256Ipa, Ipa};
     use verkle_tree::ipa_fr::transcript::{PoseidonBn256Transcript, Bn256Transcript};
-    use verkle_tree::ipa_fr::utils::{read_field_element_le, inner_prod, test_poly};
+    use verkle_tree::ipa_fr::utils::{read_field_element_le, test_poly};
 
     use super::{IpaCircuitInput, VkAndProof};
+
+    const CIRCUIT_NAME: &str = "ipa";
 
     fn make_test_input(
         poly: &[Fr],
@@ -71,13 +74,14 @@ mod ipa_api_tests {
         ipa_conf: &IpaConfig<G1>,
     ) -> anyhow::Result<IpaCircuitInput> {
         let commitment = ipa_conf.commit(&poly).unwrap();
-        let proof =
+        let (proof, ip) =
             Bn256Ipa::create_proof(commitment, poly, eval_point, transcript_params, &ipa_conf)?;
 
-        let lagrange_coeffs = ipa_conf
-            .precomputed_weights
-            .compute_barycentric_coefficients(&eval_point)?;
-        let ip = inner_prod(&poly, &lagrange_coeffs)?;
+        // let lagrange_coeffs = ipa_conf
+        //     .precomputed_weights
+        //     .compute_barycentric_coefficients(&eval_point)?;
+        // let _ip = inner_prod(&poly, &lagrange_coeffs)?;
+        // assert_eq!(_ip, ip);
 
         Ok(IpaCircuitInput {
             commitment,
@@ -88,29 +92,14 @@ mod ipa_api_tests {
     }
 
     fn open_crs_for_log2_of_size(_log2_n: usize) -> Crs<Bn256, CrsForMonomialForm> {
-        let full_path = Path::new("./tests/ipa/crs");
+        let full_path = Path::new("./tests").join(CIRCUIT_NAME).join("crs");
         println!("Opening {}", full_path.to_string_lossy());
-        let file = File::open(full_path).unwrap();
+        let file = File::open(&full_path).unwrap();
         let reader = std::io::BufReader::with_capacity(1 << 24, file);
         let crs = Crs::<Bn256, CrsForMonomialForm>::read(reader).unwrap();
         println!("Load {}", full_path.to_string_lossy());
 
         crs
-    }
-
-    fn create_crs_for_log2_of_size(log2_n: usize) -> Crs<Bn256, CrsForMonomialForm> {
-        let worker = franklin_crypto::bellman::worker::Worker::new();
-
-        Crs::<Bn256, CrsForMonomialForm>::crs_42(1 << log2_n, &worker)
-    }
-
-    #[test]
-    fn test_crs_serialization() {
-        let path = std::env::current_dir().unwrap();
-        let path = path.join("tests/ipa/crs");
-        let mut file = File::create(path).unwrap();
-        let crs = create_crs_for_log2_of_size(21); // < 2097152 constraints (?)
-        crs.write(&mut file).expect("must serialize CRS");
     }
 
     #[test]
@@ -139,25 +128,27 @@ mod ipa_api_tests {
         )?;
 
         let rns_params = BaseRnsParameters::<Bn256>::new_for_field(68, 110, 4);
-        let VkAndProof(_vk, _proof) = circuit_input
+        let VkAndProof(vk, proof) = circuit_input
             .create_plonk_proof::<WrapperUnchecked<'_, Bn256>>(
                 prover_transcript.into_params(),
                 ipa_conf,
                 &rns_params,
                 crs,
             )?;
+        let proof_path = Path::new("./tests").join(CIRCUIT_NAME).join("proof_case1");
         let file = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
-            .open("./tests/ipa/proof_case1")?;
-        _proof.write(file)?;
+            .open(proof_path)?;
+        proof.write(file)?;
+        let vk_path = Path::new("./tests").join(CIRCUIT_NAME).join("vk_case1");
         let file = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
-            .open("./tests/ipa/vk_case1")?;
-        _vk.write(file)?;
+            .open(vk_path)?;
+        vk.write(file)?;
 
         Ok(())
     }
@@ -174,7 +165,7 @@ mod ipa_api_tests {
         let commitment = ipa_conf.commit(&padded_poly).unwrap();
         let prover_transcript = PoseidonBn256Transcript::with_bytes(b"ipa");
 
-        let proof = Bn256Ipa::create_proof(
+        let (proof, ip) = Bn256Ipa::create_proof(
             commitment,
             &padded_poly,
             eval_point,
@@ -182,10 +173,11 @@ mod ipa_api_tests {
             &ipa_conf,
         )?;
 
-        let lagrange_coeffs = ipa_conf
-            .precomputed_weights
-            .compute_barycentric_coefficients(&eval_point)?;
-        let ip = inner_prod(&padded_poly, &lagrange_coeffs)?;
+        // let lagrange_coeffs = ipa_conf
+        //     .precomputed_weights
+        //     .compute_barycentric_coefficients(&eval_point)?;
+        // let _ip = inner_prod(&padded_poly, &lagrange_coeffs)?;
+        // assert_eq!(_ip, ip);
 
         let circuit_input = IpaCircuitInput {
             commitment,
@@ -194,21 +186,20 @@ mod ipa_api_tests {
             inner_prod: ip,
         };
 
-        let file_path = "tests/ipa/public_inputs";
-        let path = std::env::current_dir()?;
-        let path = path.join(file_path);
-
+        let file_path = Path::new("./tests")
+            .join(CIRCUIT_NAME)
+            .join("public_inputs");
         let mut file = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
-            .open(&path)?;
+            .open(&file_path)?;
         circuit_input.write_into(&mut file)?;
-        println!("write circuit_input into {}", file_path);
+        println!("write circuit_input into {:?}", file_path);
 
-        let mut file = OpenOptions::new().read(true).open(&path)?;
+        let mut file = OpenOptions::new().read(true).open(&file_path)?;
         let circuit_input2 = IpaCircuitInput::read_from(&mut file)?;
-        println!("read circuit_input2 from {}", file_path);
+        println!("read circuit_input2 from {:?}", file_path);
 
         assert_eq!(
             circuit_input, circuit_input2,
@@ -231,7 +222,7 @@ mod ipa_api_tests {
         let commitment = ipa_conf.commit(&padded_poly).unwrap();
         let prover_transcript = PoseidonBn256Transcript::with_bytes(b"ipa");
 
-        let proof = Bn256Ipa::create_proof(
+        let (proof, ip) = Bn256Ipa::create_proof(
             commitment,
             &padded_poly,
             eval_point,
@@ -239,14 +230,17 @@ mod ipa_api_tests {
             &ipa_conf,
         )?;
 
-        let lagrange_coeffs = ipa_conf
-            .precomputed_weights
-            .compute_barycentric_coefficients(&eval_point)?;
-        let ip = inner_prod(&padded_poly, &lagrange_coeffs)?;
+        // let lagrange_coeffs = ipa_conf
+        //     .precomputed_weights
+        //     .compute_barycentric_coefficients(&eval_point)?;
+        // let _ip = inner_prod(&padded_poly, &lagrange_coeffs)?;
+        // assert_eq!(_ip, ip);
 
-        let file_path = "tests/ipa/public_inputs.json";
+        let file_path = Path::new("./tests")
+            .join(CIRCUIT_NAME)
+            .join("public_inputs.json");
         let path = std::env::current_dir()?;
-        let path = path.join(file_path);
+        let path = path.join(&file_path);
 
         let circuit_input = IpaCircuitInput {
             commitment,
@@ -262,11 +256,11 @@ mod ipa_api_tests {
             .truncate(true)
             .open(&path)?;
         write!(file, "{}", j)?;
-        println!("write circuit_input into {}", file_path);
+        println!("write circuit_input into {:?}", file_path);
 
         let raw = read_to_string(path)?;
         let circuit_input2: IpaCircuitInput = serde_json::from_str(&raw)?;
-        println!("read circuit_input2 from {}", file_path);
+        println!("read circuit_input2 from {:?}", file_path);
 
         assert_eq!(circuit_input, circuit_input2);
 
@@ -289,22 +283,6 @@ impl IpaCircuitInput {
         }
     }
 
-    pub fn get_commitment(&self) -> &G1Affine {
-        &self.commitment
-    }
-
-    pub fn get_proof(&self) -> &IpaProof<G1> {
-        &self.proof
-    }
-
-    pub fn get_eval_point(&self) -> &Fr {
-        &self.eval_point
-    }
-
-    pub fn get_inner_prod(&self) -> &Fr {
-        &self.inner_prod
-    }
-
     pub fn create_plonk_proof<'a, WP: WrappedAffinePoint<'a, Bn256>>(
         &self,
         transcript_params: Fr,
@@ -312,27 +290,23 @@ impl IpaCircuitInput {
         rns_params: &'a BaseRnsParameters<Bn256>,
         crs: Crs<Bn256, CrsForMonomialForm>,
     ) -> Result<VkAndProof<'a, WP, BN256AuxData>, SynthesisError> {
-        // let dummy_circuit = PoseidonCircuit::<Bn256> {
-        //   inputs: inputs.iter().map(|&_| None).collect::<Vec<_>>(),
-        //   output: None,
-        // };
-
         let aux_data = BN256AuxData::new();
-        let circuit = IpaCircuit::<'a, Bn256, WP, BN256AuxData> {
-            transcript_params: Some(transcript_params),
-            commitment: Some(self.commitment),
-            proof: OptionIpaProof::from(self.proof.clone()),
-            eval_point: Some(self.eval_point),
-            inner_prod: Some(self.inner_prod),
-            ipa_conf,
+        let num_rounds = log2_ceil(ipa_conf.get_domain_size()) as usize;
+        let dummy_circuit = IpaCircuit::<'a, Bn256, WP, BN256AuxData> {
+            transcript_params: None,
+            commitment: None,
+            proof: OptionIpaProof::with_depth(num_rounds),
+            eval_point: None,
+            inner_prod: None,
+            ipa_conf: ipa_conf.clone(),
             rns_params,
-            aux_data,
+            aux_data: aux_data.clone(),
             _wp: std::marker::PhantomData,
         };
 
         let mut dummy_assembly =
             SetupAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
-        circuit
+        dummy_circuit
             .synthesize(&mut dummy_assembly)
             .expect("must synthesize");
         dummy_assembly.finalize();
@@ -349,6 +323,18 @@ impl IpaCircuitInput {
             &setup, &worker, &crs,
         )?;
 
+        let circuit = IpaCircuit::<'a, Bn256, WP, BN256AuxData> {
+            transcript_params: Some(transcript_params),
+            commitment: Some(self.commitment),
+            proof: OptionIpaProof::from(self.proof.clone()),
+            eval_point: Some(self.eval_point),
+            inner_prod: Some(self.inner_prod),
+            ipa_conf,
+            rns_params,
+            aux_data,
+            _wp: std::marker::PhantomData,
+        };
+
         let mut assembly =
             ProvingAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
         circuit.synthesize(&mut assembly).expect("must synthesize");
@@ -356,7 +342,6 @@ impl IpaCircuitInput {
 
         println!("prove");
 
-        // TODO: Is this correct?
         let proof = assembly
             .create_proof::<IpaCircuit<'a, Bn256, WP, BN256AuxData>, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(
                 &worker, &setup, &crs, None,

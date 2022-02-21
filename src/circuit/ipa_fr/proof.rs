@@ -25,6 +25,13 @@ impl<G: CurveProjective> OptionIpaProof<G> {
             a: None,
         }
     }
+    pub fn take(&mut self) -> Self {
+        let l = self.l.iter_mut().map(Option::take).collect::<Vec<_>>();
+        let r = self.r.iter_mut().map(Option::take).collect::<Vec<_>>();
+        let a = self.a.take();
+
+        Self { l, r, a }
+    }
 }
 
 impl<G: CurveProjective> From<IpaProof<G>> for OptionIpaProof<G> {

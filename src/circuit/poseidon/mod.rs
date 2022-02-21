@@ -6,6 +6,7 @@ use franklin_crypto::bellman::plonk::better_better_cs::cs::{
 use franklin_crypto::bellman::SynthesisError;
 use franklin_crypto::circuit::Assignment;
 use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
+// use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
 use generic_array::{typenum::*, ArrayLength, GenericArray};
 use verkle_tree::ipa_fr::utils::{read_field_element_be, read_field_element_le};
 
@@ -27,12 +28,12 @@ where
 impl<E: Engine, N: ArrayLength<Option<E::Fr>>> Circuit<E> for PoseidonCircuit<E, N> {
     type MainGate = Width4MainGateWithDNext;
 
-    fn declare_used_gates() -> Result<Vec<Box<dyn GateInternal<E>>>, SynthesisError> {
-        Ok(vec![
-            Self::MainGate::default().into_internal(),
-            // TwoBitDecompositionRangecheckCustomGate::default().into_internal(),
-        ])
-    }
+    // fn declare_used_gates() -> Result<Vec<Box<dyn GateInternal<E>>>, SynthesisError> {
+    //     Ok(vec![
+    //         Self::MainGate::default().into_internal(),
+    //         TwoBitDecompositionRangecheckCustomGate::default().into_internal(),
+    //     ])
+    // }
 
     fn synthesize<CS>(&self, cs: &mut CS) -> Result<(), SynthesisError>
     where
@@ -48,6 +49,13 @@ impl<E: Engine, N: ArrayLength<Option<E::Fr>>> Circuit<E> for PoseidonCircuit<E,
         let result = calc_poseidon(cs, &inputs)?;
         let output = AllocatedNum::alloc_input(cs, || Ok(*self.output.get()?))?;
         result.sub(cs, &output)?.assert_is_zero(cs)?;
+
+        // let mut row = vec![];
+        // row.push(cs.get_explicit_zero()?);
+        // row.reverse();
+
+        // let gate = TwoBitDecompositionRangecheckCustomGate::default();
+        // cs.new_single_gate_for_trace_step(&gate, &[], &[], &[])?;
 
         Ok(())
     }

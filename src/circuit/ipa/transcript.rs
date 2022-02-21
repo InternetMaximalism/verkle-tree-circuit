@@ -2,7 +2,7 @@ use franklin_crypto::bellman::{ConstraintSystem, SynthesisError};
 use franklin_crypto::circuit::num::AllocatedNum;
 use franklin_crypto::jubjub::JubjubEngine;
 
-use verkle_tree::ipa::utils::read_field_element_be;
+use verkle_tree::ipa_fr::utils::read_field_element_be;
 
 pub trait Transcript<E: JubjubEngine>: Sized + Clone {
     fn new(init_state: Option<E::Fr>) -> Self;

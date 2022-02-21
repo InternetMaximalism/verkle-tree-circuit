@@ -12,12 +12,20 @@ use crate::circuit::poseidon::calc_poseidon;
 use verkle_tree::ipa_fr::utils::{read_field_element_le, write_field_element_le};
 
 pub trait Transcript<E: Engine>: Sized + Clone {
-    fn new(init_state: AllocatedNum<E>) -> Self;
+    type Params;
+
+    fn new(init_state: Self::Params) -> Self;
     fn commit_alloc_num<CS: ConstraintSystem<E>>(
         &mut self,
         cs: &mut CS,
         element: AllocatedNum<E>,
     ) -> Result<(), SynthesisError>;
+    fn commit_point<'a, CS: ConstraintSystem<E>, WP: WrappedAffinePoint<'a, E>>(
+        &mut self,
+        cs: &mut CS,
+        point: &WP,
+    ) -> Result<(), SynthesisError>;
+    fn into_params(self) -> Self::Params;
     fn get_challenge(&mut self) -> AllocatedNum<E>;
 }
 
@@ -32,6 +40,8 @@ where
 }
 
 impl<E: Engine> Transcript<E> for WrappedTranscript<E> {
+    type Params = AllocatedNum<E>;
+
     fn new(init_state: AllocatedNum<E>) -> Self {
         // let blake_2s_state = Blake2sTranscript::new();
 
@@ -54,6 +64,24 @@ impl<E: Engine> Transcript<E> for WrappedTranscript<E> {
     }
 
     fn get_challenge(&mut self) -> AllocatedNum<E> {
+        self.state
+    }
+
+    fn commit_point<'a, CS: ConstraintSystem<E>, WP: WrappedAffinePoint<'a, E>>(
+        &mut self,
+        cs: &mut CS,
+        point: &WP,
+    ) -> Result<(), SynthesisError> {
+        let unwrapped_point = point.get_point();
+        let point_x = unwrapped_point.get_x();
+        self.commit_field_element::<CS, E::Fq>(cs, point_x)?;
+        let point_y = unwrapped_point.get_y();
+        self.commit_field_element::<CS, E::Fq>(cs, point_y)?;
+
+        Ok(())
+    }
+
+    fn into_params(self) -> Self::Params {
         self.state
     }
 }

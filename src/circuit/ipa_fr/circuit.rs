@@ -11,6 +11,7 @@ use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::WrappedAffinePoint;
 use verkle_tree::ipa_fr::config::IpaConfig;
 use verkle_tree::ipa_fr::rns::BaseRnsParameters;
+use verkle_tree::ipa_fr::utils::log2_ceil;
 
 use super::config::compute_barycentric_coefficients;
 use super::proof::{generate_challenges, OptionIpaProof};
@@ -52,7 +53,8 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
             );
         }
 
-        let num_rounds = self.ipa_conf.precomputed_weights.num_ipa_rounds as usize;
+        let domain_size = self.ipa_conf.get_domain_size();
+        let num_rounds = log2_ceil(domain_size) as usize;
         if self.proof.l.len() != num_rounds {
             return Err(Error::new(
                 ErrorKind::InvalidData,
@@ -74,12 +76,12 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
         // let bit_limit = None; // Some(256usize);
         let mut b = compute_barycentric_coefficients::<E, CS>(
             cs,
-            &self.ipa_conf.precomputed_weights,
+            &self.ipa_conf.get_precomputed_weights(),
             &eval_point,
         )
         .unwrap();
 
-        if b.len() != self.ipa_conf.srs.len() {
+        if b.len() != self.ipa_conf.get_srs().len() {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 "`barycentric_coefficients` had incorrect length",
@@ -92,7 +94,12 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
         transcript.commit_alloc_num(cs, inner_prod)?; // output point
 
         let w = transcript.get_challenge();
-        let mut q = WP::alloc(cs, Some(self.ipa_conf.q), self.rns_params, &self.aux_data)?;
+        let mut q = WP::alloc(
+            cs,
+            Some(self.ipa_conf.get_q()),
+            self.rns_params,
+            &self.aux_data,
+        )?;
         // let w_bits = w.into_bits_le_fixed(
         //   cs.namespace(|| "Get S bits"),
         //   <E::Fs as PrimeField>::NUM_BITS as usize,
@@ -139,7 +146,7 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
 
         let mut current_basis = self
             .ipa_conf
-            .srs
+            .get_srs()
             .iter()
             .map(|v| WP::alloc(cs, Some(*v), self.rns_params, &self.aux_data))
             .collect::<Result<Vec<_>, SynthesisError>>()?;

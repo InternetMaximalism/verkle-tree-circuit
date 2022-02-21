@@ -1,22 +1,15 @@
-# Bellman Sample
+# Verkle Tree Circuit
 
 ## Environment
 
 ```sh
 cargo --version # >= 1.56.0
+rustup override set nightly
+rustup update nightly
 ```
 
 ## How to test
 
 ```sh
-cargo test
-```
-
-## How to use
-
-```sh
-cargo run # help
-cargo run setup tests/proving_key tests/verifying_key
-cargo run prove tests/proving_key tests/input.json tests/proof tests/public_wires.txt
-cargo run verify tests/verifying_key tests/proof tests/public_wires.txt
+RUST_BACKTRACE=1 cargo test -- --nocapture
 ```
