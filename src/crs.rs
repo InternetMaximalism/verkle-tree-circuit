@@ -16,7 +16,7 @@ mod crs_tests {
         let path = std::env::current_dir().unwrap();
         let path = path.join("tests/crs");
         let mut file = File::create(path).unwrap();
-        let crs = create_crs_for_log2_of_size(21); // < 2097152 constraints (?)
+        let crs = create_crs_for_log2_of_size(23); // < 8388608 constraints
         crs.write(&mut file).expect("must serialize CRS");
     }
 }

@@ -101,7 +101,7 @@ mod batch_proof_api_tests {
 
     #[test]
     fn test_batch_proof_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
-        let crs = open_crs_for_log2_of_size(21);
+        let crs = open_crs_for_log2_of_size(23);
         let domain_size = 256;
         let ipa_conf = IpaConfig::<G1Affine>::new(domain_size);
         let rns_params = &BaseRnsParameters::<Bn256>::new_for_field(68, 110, 4);

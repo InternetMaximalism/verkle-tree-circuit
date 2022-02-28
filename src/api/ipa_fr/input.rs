@@ -111,7 +111,7 @@ mod ipa_api_tests {
 
     #[test]
     fn test_ipa_fr_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
-        let crs = open_crs_for_log2_of_size(21);
+        let crs = open_crs_for_log2_of_size(23);
         let eval_point: Fr = read_field_element_le(&123456789u64.to_le_bytes()).unwrap();
         let domain_size = 2;
         let ipa_conf = IpaConfig::<G1Affine>::new(domain_size);
