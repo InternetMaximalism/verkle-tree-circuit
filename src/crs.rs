@@ -20,4 +20,3 @@ mod crs_tests {
         crs.write(&mut file).expect("must serialize CRS");
     }
 }
-
