@@ -9,7 +9,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
 use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr};
 use franklin_crypto::bellman::plonk::better_better_cs::cs::{
-    Circuit, ProvingAssembly, SetupAssembly, Width4MainGateWithDNext,
+    Circuit, ProvingAssembly, SetupAssembly, TrivialAssembly, Width4MainGateWithDNext,
 };
 use franklin_crypto::bellman::plonk::better_better_cs::proof::Proof;
 use franklin_crypto::bellman::plonk::better_better_cs::setup::VerificationKey;
@@ -45,6 +45,8 @@ mod poseidon_api_tests {
 
     use franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
     use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr};
+    use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
+    use franklin_crypto::bellman::plonk::commitments::transcript::keccak_transcript::RollingKeccakTranscript;
     use franklin_crypto::bellman::Field;
     use generic_array::typenum;
     use verkle_tree::ff_utils::bn256_fr::Bn256Fr;
@@ -55,6 +57,8 @@ mod poseidon_api_tests {
     // use crate::circuit::poseidon::PoseidonCircuit;
 
     use super::{PoseidonCircuitInput, VkAndProof};
+
+    const CIRCUIT_NAME: &str = "poseidon";
 
     fn make_test_input(inputs: Vec<Fr>) -> PoseidonCircuitInput<typenum::U2> {
         let preimage = inputs
@@ -75,9 +79,9 @@ mod poseidon_api_tests {
     }
 
     fn open_crs_for_log2_of_size(_log2_n: usize) -> Crs<Bn256, CrsForMonomialForm> {
-        let full_path = Path::new("./tests/discrete_log/crs");
+        let full_path = Path::new("./tests").join(CIRCUIT_NAME).join("crs");
         println!("Opening {}", full_path.to_string_lossy());
-        let file = File::open(full_path).unwrap();
+        let file = File::open(&full_path).unwrap();
         let reader = std::io::BufReader::with_capacity(1 << 24, file);
         let crs = Crs::<Bn256, CrsForMonomialForm>::read(reader).unwrap();
         println!("Load {}", full_path.to_string_lossy());
@@ -85,23 +89,9 @@ mod poseidon_api_tests {
         crs
     }
 
-    fn create_crs_for_log2_of_size(log2_n: usize) -> Crs<Bn256, CrsForMonomialForm> {
-        let worker = franklin_crypto::bellman::worker::Worker::new();
-
-        Crs::<Bn256, CrsForMonomialForm>::crs_42(1 << log2_n, &worker)
-    }
-
-    #[test]
-    fn test_crs_serialization() {
-        let path = std::env::current_dir().unwrap();
-        let path = path.join("tests/poseidon/crs");
-        let mut file = File::create(path).unwrap();
-        let crs = create_crs_for_log2_of_size(12); // < 4096 constraints (?)
-        crs.write(&mut file).expect("must serialize CRS");
-    }
-
     #[test]
     fn test_fr_poseidon_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
+        // let crs = plonkit::plonk::gen_key_monomial_form(power)?;
         let crs = open_crs_for_log2_of_size(12);
         let input1 = read_field_element_le::<Fr>(&[1]).unwrap();
         let input2 = read_field_element_le::<Fr>(&[2]).unwrap();
@@ -112,19 +102,25 @@ mod poseidon_api_tests {
         // ])
         // .unwrap();
         let circuit_input = make_test_input(inputs);
-        let VkAndProof(_vk, _proof) = circuit_input.create_plonk_proof(crs)?;
+        let VkAndProof(vk, proof) = circuit_input.create_plonk_proof(crs)?;
+        let is_valid = verify::<_, _, RollingKeccakTranscript<Fr>>(&vk, &proof, None)
+            .expect("must perform verification");
+        assert!(is_valid);
+
+        let proof_path = Path::new("./tests").join(CIRCUIT_NAME).join("proof_case1");
         let file = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
-            .open("./tests/poseidon/proof_case1")?;
-        _proof.write(file)?;
+            .open(proof_path)?;
+        proof.write(file)?;
+        let vk_path = Path::new("./tests").join(CIRCUIT_NAME).join("vk_case1");
         let file = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
-            .open("./tests/poseidon/vk_case1")?;
-        _vk.write(file)?;
+            .open(vk_path)?;
+        vk.write(file)?;
 
         Ok(())
     }
@@ -167,7 +163,6 @@ mod poseidon_api_tests {
 
     //   use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
 
-    //   // TODO: Is this correct?
     //   let is_valid = verify::<
     //     Bn256,
     //     PoseidonCircuit<Bn256, U2>,
@@ -195,9 +190,11 @@ mod poseidon_api_tests {
             _n: std::marker::PhantomData,
         };
 
-        let file_path = "tests/poseidon/public_inputs";
+        let file_path = Path::new("./tests")
+            .join(CIRCUIT_NAME)
+            .join("public_inputs");
         let path = std::env::current_dir()?;
-        let path = path.join(file_path);
+        let path = path.join(&file_path);
 
         let mut file = OpenOptions::new()
             .write(true)
@@ -205,11 +202,11 @@ mod poseidon_api_tests {
             .truncate(true)
             .open(&path)?;
         circuit_input.write_into(&mut file)?;
-        println!("write circuit_input into {}", file_path);
+        println!("write circuit_input into {:?}", file_path);
 
         let mut file = OpenOptions::new().read(true).open(&path)?;
         let circuit_input2 = PoseidonCircuitInput::read_from(&mut file)?;
-        println!("read circuit_input2 from {}", file_path);
+        println!("read circuit_input2 from {:?}", file_path);
 
         assert_eq!(circuit_input, circuit_input2);
 
@@ -232,9 +229,11 @@ mod poseidon_api_tests {
             _n: std::marker::PhantomData,
         };
 
-        let file_path = "tests/poseidon/public_inputs.json";
+        let file_path = Path::new("./tests")
+            .join(CIRCUIT_NAME)
+            .join("public_inputs.json");
         let path = std::env::current_dir()?;
-        let path = path.join(file_path);
+        let path = path.join(&file_path);
 
         let j = serde_json::to_string(&circuit_input)?;
         let mut file = OpenOptions::new()
@@ -243,11 +242,11 @@ mod poseidon_api_tests {
             .truncate(true)
             .open(&path)?;
         write!(file, "{}", j)?;
-        println!("write circuit_input into {}", file_path);
+        println!("write circuit_input into {:?}", file_path);
 
         let raw = read_to_string(path)?;
         let circuit_input2: PoseidonCircuitInput<typenum::U2> = serde_json::from_str(&raw)?;
-        println!("read circuit_input2 from {}", file_path);
+        println!("read circuit_input2 from {:?}", file_path);
 
         assert_eq!(circuit_input, circuit_input2);
 
@@ -287,30 +286,31 @@ impl<N: ArrayLength<Option<Fr>>> PoseidonCircuitInput<N> {
         &self,
         crs: Crs<Bn256, CrsForMonomialForm>,
     ) -> Result<VkAndProof<N>, SynthesisError> {
-        // let dummy_circuit = PoseidonCircuit::<Bn256> {
-        //   inputs: inputs.iter().map(|&_| None).collect::<Vec<_>>(),
-        //   output: None,
-        // };
+        let dummy_inputs = self
+            .inputs
+            .iter()
+            .map(|&_| None)
+            .collect::<GenericArray<_, _>>();
+        let dummy_circuit = PoseidonCircuit::<Bn256> {
+            inputs: dummy_inputs,
+            output: None,
+        };
 
         let circuit = PoseidonCircuit::<Bn256, N> {
             inputs: self
                 .inputs
                 .iter()
                 .map(|&x| Some(x))
-                .collect::<GenericArray<Option<Fr>, N>>(),
+                .collect::<GenericArray<_, _>>(),
             output: Some(self.output),
         };
 
         let mut dummy_assembly =
             SetupAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
-        circuit
+        dummy_circuit
             .synthesize(&mut dummy_assembly)
             .expect("must synthesize");
         dummy_assembly.finalize();
-
-        // println!("Checking if satisfied");
-        // let is_satisfied = dummy_assembly.is_satisfied();
-        // assert!(is_satisfied, "unsatisfied constraints");
 
         let worker = franklin_crypto::bellman::worker::Worker::new();
         let setup = dummy_assembly.create_setup::<PoseidonCircuit<Bn256, N>>(&worker)?;
@@ -318,12 +318,22 @@ impl<N: ArrayLength<Option<Fr>>> PoseidonCircuitInput<N> {
         let vk =
             VerificationKey::<Bn256, PoseidonCircuit<Bn256, N>>::from_setup(&setup, &worker, &crs)?;
 
+        println!("Checking if satisfied");
+        let mut trivial_assembly =
+            TrivialAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
+        circuit
+            .synthesize(&mut trivial_assembly)
+            .expect("must synthesize");
+        if !trivial_assembly.is_satisfied() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+
+        println!("prove");
+
         let mut assembly =
             ProvingAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
         circuit.synthesize(&mut assembly).expect("must synthesize");
         assembly.finalize();
-
-        println!("prove");
 
         // TODO: Is this correct?
         let proof = assembly

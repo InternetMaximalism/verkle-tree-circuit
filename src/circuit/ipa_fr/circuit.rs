@@ -7,10 +7,12 @@ use franklin_crypto::bellman::plonk::better_better_cs::cs::{
 use franklin_crypto::bellman::{Field, SynthesisError};
 use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
 use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
+use franklin_crypto::plonk::circuit::boolean::Boolean;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::AuxData;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::WrappedAffinePoint;
 use verkle_tree::ipa_fr::config::IpaConfig;
 use verkle_tree::ipa_fr::rns::BaseRnsParameters;
+use verkle_tree::ipa_fr::utils::log2_ceil;
 
 use super::config::compute_barycentric_coefficients;
 use super::proof::{generate_challenges, OptionIpaProof};
@@ -21,10 +23,10 @@ use super::utils::{commit, fold_points, fold_scalars};
 pub struct IpaCircuit<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> {
     pub transcript_params: Option<E::Fr>,
     pub commitment: Option<E::G1Affine>,
-    pub proof: OptionIpaProof<E::G1>,
+    pub proof: OptionIpaProof<E::G1Affine>,
     pub eval_point: Option<E::Fr>,
     pub inner_prod: Option<E::Fr>,
-    pub ipa_conf: IpaConfig<E::G1>,
+    pub ipa_conf: IpaConfig<E::G1Affine>,
     pub rns_params: &'a BaseRnsParameters<E>,
     pub aux_data: AD,
     pub _wp: std::marker::PhantomData<WP>,
@@ -52,7 +54,8 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
             );
         }
 
-        let num_rounds = self.ipa_conf.precomputed_weights.num_ipa_rounds as usize;
+        let domain_size = self.ipa_conf.get_domain_size();
+        let num_rounds = log2_ceil(domain_size) as usize;
         if self.proof.l.len() != num_rounds {
             return Err(Error::new(
                 ErrorKind::InvalidData,
@@ -63,23 +66,16 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
 
         let eval_point = AllocatedNum::alloc(cs, || Ok(self.eval_point.unwrap()))?;
         let inner_prod = AllocatedNum::alloc(cs, || Ok(self.inner_prod.unwrap()))?;
-        // let wrapped_base_point = EdwardsPoint::interpret(
-        //   cs.namespace(|| "base_point"),
-        //   &wrapped_base_point_x,
-        //   &wrapped_base_point_y,
-        //   &self.jubjub_params,
-        // )?;
         let mut commitment = WP::alloc(cs, self.commitment, self.rns_params, &self.aux_data)?;
 
-        // let bit_limit = None; // Some(256usize);
         let mut b = compute_barycentric_coefficients::<E, CS>(
             cs,
-            &self.ipa_conf.precomputed_weights,
+            &self.ipa_conf.get_precomputed_weights(),
             &eval_point,
         )
         .unwrap();
 
-        if b.len() != self.ipa_conf.srs.len() {
+        if b.len() != self.ipa_conf.get_srs().len() {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 "`barycentric_coefficients` had incorrect length",
@@ -92,11 +88,12 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
         transcript.commit_alloc_num(cs, inner_prod)?; // output point
 
         let w = transcript.get_challenge();
-        let mut q = WP::alloc(cs, Some(self.ipa_conf.q), self.rns_params, &self.aux_data)?;
-        // let w_bits = w.into_bits_le_fixed(
-        //   cs.namespace(|| "Get S bits"),
-        //   <E::Fs as PrimeField>::NUM_BITS as usize,
-        // )?;
+        let mut q = WP::alloc(
+            cs,
+            Some(self.ipa_conf.get_q()),
+            self.rns_params,
+            &self.aux_data,
+        )?;
         let mut qw = q.mul::<CS, AD>(cs, &w, None, self.rns_params, &self.aux_data)?;
 
         let mut qy = qw
@@ -139,7 +136,7 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
 
         let mut current_basis = self
             .ipa_conf
-            .srs
+            .get_srs()
             .iter()
             .map(|v| WP::alloc(cs, Some(*v), self.rns_params, &self.aux_data))
             .collect::<Result<Vec<_>, SynthesisError>>()?;
@@ -203,13 +200,14 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
         let result = result1.add(cs, &mut result2, self.rns_params)?; // result = result1 + result2
 
         // Ensure `commitment` is equal to `result`.
-        commitment.equals(cs, &result, self.rns_params)?;
+        let is_valid = commitment.equals(cs, &result, self.rns_params)?;
 
         println!(
             "verification check ends: {} s",
             start.elapsed().as_millis() as f64 / 1000.0
         );
 
-        Ok(())
+        let allocated_true = Boolean::constant(true);
+        Boolean::enforce_equal(cs, &is_valid, &allocated_true)
     }
 }

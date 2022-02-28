@@ -1,11 +1,13 @@
 // use franklin_crypto::bellman::bls12_381::Bls12;
 use franklin_crypto::bellman::pairing::Engine;
 use franklin_crypto::bellman::plonk::better_better_cs::cs::{
-    Circuit, ConstraintSystem, Gate, GateInternal, Width4MainGateWithDNext,
+    Circuit, ConstraintSystem, Width4MainGateWithDNext,
 };
+// use franklin_crypto::bellman::plonk::better_better_cs::cs::{Gate, GateInternal};
 use franklin_crypto::bellman::SynthesisError;
 use franklin_crypto::circuit::Assignment;
 use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
+// use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
 use generic_array::{typenum::*, ArrayLength, GenericArray};
 use verkle_tree::ipa_fr::utils::{read_field_element_be, read_field_element_le};
 
@@ -27,12 +29,12 @@ where
 impl<E: Engine, N: ArrayLength<Option<E::Fr>>> Circuit<E> for PoseidonCircuit<E, N> {
     type MainGate = Width4MainGateWithDNext;
 
-    fn declare_used_gates() -> Result<Vec<Box<dyn GateInternal<E>>>, SynthesisError> {
-        Ok(vec![
-            Self::MainGate::default().into_internal(),
-            // TwoBitDecompositionRangecheckCustomGate::default().into_internal(),
-        ])
-    }
+    // fn declare_used_gates() -> Result<Vec<Box<dyn GateInternal<E>>>, SynthesisError> {
+    //     Ok(vec![
+    //         Self::MainGate::default().into_internal(),
+    //         TwoBitDecompositionRangecheckCustomGate::default().into_internal(),
+    //     ])
+    // }
 
     fn synthesize<CS>(&self, cs: &mut CS) -> Result<(), SynthesisError>
     where
