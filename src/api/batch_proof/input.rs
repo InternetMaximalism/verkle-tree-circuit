@@ -16,7 +16,7 @@ use franklin_crypto::{
     },
 };
 use franklin_crypto::{
-    bellman::pairing::bn256::{Bn256, Fr, G1Affine, G1},
+    bellman::pairing::bn256::{Bn256, Fr, G1Affine},
     plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::BN256AuxData,
 };
 use verkle_tree::ipa_fr::config::IpaConfig;
@@ -27,7 +27,7 @@ use crate::circuit::batch_proof::BatchProofCircuit;
 use crate::circuit::ipa_fr::proof::OptionIpaProof;
 
 pub struct BatchProofCircuitInput {
-    pub proof: IpaProof<G1>,
+    pub proof: IpaProof<G1Affine>,
     pub d: G1Affine,
     pub commitments: Vec<G1Affine>,
     pub ys: Vec<Fr>,
@@ -39,15 +39,14 @@ mod batch_proof_api_tests {
     use std::fs::{File, OpenOptions};
     use std::path::Path;
 
-    use franklin_crypto::bellman::bn256::G1;
     use franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
-    use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr};
+    use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr, G1Affine};
     use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::without_flag_unchecked::WrapperUnchecked;
-    use verkle_tree::batch_proof::{Bn256BatchProof, BatchProof};
+    use verkle_tree::batch_proof::BatchProof;
     use verkle_tree::ipa_fr::config::{IpaConfig, Committer};
     use verkle_tree::ipa_fr::rns::BaseRnsParameters;
     use verkle_tree::ipa_fr::transcript::{PoseidonBn256Transcript, Bn256Transcript};
-    use verkle_tree::ipa_fr::utils::{test_poly};
+    use verkle_tree::ipa_fr::utils::test_poly;
 
     use super::{BatchProofCircuitInput, VkAndProof};
 
@@ -57,15 +56,22 @@ mod batch_proof_api_tests {
         fs: Vec<Vec<Fr>>,
         zs: Vec<usize>,
         transcript_params: Fr,
-        ipa_conf: &IpaConfig<G1>,
+        rns_params: &BaseRnsParameters<Bn256>,
+        ipa_conf: &IpaConfig<G1Affine>,
     ) -> anyhow::Result<BatchProofCircuitInput> {
         let commitments = fs
             .iter()
             .map(|fi| ipa_conf.commit(fi))
             .collect::<anyhow::Result<Vec<_>>>()
             .unwrap();
-        let proof =
-            Bn256BatchProof::create_proof(&commitments, &fs, &zs, transcript_params, &ipa_conf)?;
+        let proof = BatchProof::<G1Affine>::create(
+            &commitments,
+            &fs,
+            &zs,
+            transcript_params,
+            rns_params,
+            &ipa_conf,
+        )?;
 
         let ys = fs
             .iter()
@@ -97,7 +103,8 @@ mod batch_proof_api_tests {
     fn test_batch_proof_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
         let crs = open_crs_for_log2_of_size(21);
         let domain_size = 256;
-        let ipa_conf = IpaConfig::<G1>::new(domain_size);
+        let ipa_conf = IpaConfig::<G1Affine>::new(domain_size);
+        let rns_params = &BaseRnsParameters::<Bn256>::new_for_field(68, 110, 4);
 
         // Prover view
         let polys = vec![
@@ -117,7 +124,13 @@ mod batch_proof_api_tests {
         //   186, 183, 76, 63, 231, 241, 40, 189, 50, 55, 145, 23,
         // ])
         // .unwrap();
-        let circuit_input = make_test_input(fs, zs, prover_transcript.into_params(), &ipa_conf)?;
+        let circuit_input = make_test_input(
+            fs,
+            zs,
+            prover_transcript.into_params(),
+            rns_params,
+            &ipa_conf,
+        )?;
 
         let rns_params = BaseRnsParameters::<Bn256>::new_for_field(68, 110, 4);
         let VkAndProof(vk, proof) = circuit_input
@@ -155,7 +168,7 @@ impl BatchProofCircuitInput {
     pub fn create_plonk_proof<'a, WP: WrappedAffinePoint<'a, Bn256>>(
         &self,
         transcript_params: Fr,
-        ipa_conf: IpaConfig<G1>,
+        ipa_conf: IpaConfig<G1Affine>,
         rns_params: &'a BaseRnsParameters<Bn256>,
         crs: Crs<Bn256, CrsForMonomialForm>,
     ) -> Result<VkAndProof<'a, WP, BN256AuxData>, SynthesisError> {

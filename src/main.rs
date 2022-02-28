@@ -1,26 +1,23 @@
-use verkle_circuit::command::invoke_command;
+use std::fs::{File, OpenOptions};
+use std::path::Path;
+
+use franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
+use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr, G1Affine};
+use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::without_flag_unchecked::WrapperUnchecked;
+use verkle_tree::ipa_fr::config::{IpaConfig, Committer};
+use verkle_tree::ipa_fr::rns::BaseRnsParameters;
+use verkle_tree::ipa_fr::transcript::{PoseidonBn256Transcript, Bn256Transcript};
+use verkle_tree::ipa_fr::utils::{read_field_element_le, test_poly};
+use verkle_tree::ipa_fr::proof::IpaProof;
+use verkle_circuit::api::ipa_fr::input::{IpaCircuitInput, VkAndProof};
+// use verkle_circuit::command::invoke_command;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // invoke_command()?;
     exec_ipa_fr_circuit_case1()?;
 
     Ok(())
 }
-
-use std::fs::{read_to_string, File, OpenOptions};
-use std::io::Write;
-use std::path::Path;
-
-use franklin_crypto::bellman::bn256::G1;
-use franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
-use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr};
-use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::without_flag_unchecked::WrapperUnchecked;
-use verkle_tree::ipa_fr::config::{IpaConfig, Committer};
-use verkle_tree::ipa_fr::rns::BaseRnsParameters;
-use verkle_tree::ipa_fr::{Bn256Ipa, Ipa};
-use verkle_tree::ipa_fr::transcript::{PoseidonBn256Transcript, Bn256Transcript};
-use verkle_tree::ipa_fr::utils::{read_field_element_le, test_poly};
-
-use verkle_circuit::api::ipa_fr::input::{IpaCircuitInput, VkAndProof};
 
 const CIRCUIT_NAME: &str = "ipa";
 
@@ -28,7 +25,8 @@ fn exec_ipa_fr_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
     let crs = open_crs_for_log2_of_size(21);
     let eval_point: Fr = read_field_element_le(&123456789u64.to_le_bytes()).unwrap();
     let domain_size = 2;
-    let ipa_conf = IpaConfig::<G1>::new(domain_size);
+    let ipa_conf = IpaConfig::<G1Affine>::new(domain_size);
+    let rns_params = &BaseRnsParameters::<Bn256>::new_for_field(68, 110, 4);
 
     // Prover view
     let poly = vec![12, 97];
@@ -45,6 +43,7 @@ fn exec_ipa_fr_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
         &padded_poly,
         eval_point,
         prover_transcript.into_params(),
+        rns_params,
         &ipa_conf,
     )?;
 
@@ -88,11 +87,18 @@ fn make_test_input(
     poly: &[Fr],
     eval_point: Fr,
     transcript_params: Fr,
-    ipa_conf: &IpaConfig<G1>,
+    rns_params: &BaseRnsParameters<Bn256>,
+    ipa_conf: &IpaConfig<G1Affine>,
 ) -> anyhow::Result<IpaCircuitInput> {
     let commitment = ipa_conf.commit(&poly).unwrap();
-    let (proof, ip) =
-        Bn256Ipa::create_proof(commitment, poly, eval_point, transcript_params, &ipa_conf)?;
+    let (proof, ip) = IpaProof::<G1Affine>::create(
+        commitment,
+        poly,
+        eval_point,
+        transcript_params,
+        rns_params,
+        &ipa_conf,
+    )?;
 
     // let lagrange_coeffs = ipa_conf
     //     .precomputed_weights

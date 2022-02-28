@@ -1,4 +1,4 @@
-use franklin_crypto::bellman::{CurveAffine, CurveProjective, SynthesisError};
+use franklin_crypto::bellman::{CurveAffine, SynthesisError};
 // use franklin_crypto::circuit::ecc::EdwardsPoint;
 use franklin_crypto::bellman::pairing::Engine;
 use franklin_crypto::bellman::plonk::better_better_cs::cs::ConstraintSystem;
@@ -11,13 +11,13 @@ use verkle_tree::ipa_fr::proof::IpaProof;
 use super::transcript::{Transcript, WrappedTranscript};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OptionIpaProof<G: CurveProjective> {
-    pub l: Vec<Option<G::Affine>>,
-    pub r: Vec<Option<G::Affine>>,
-    pub a: Option<G::Scalar>,
+pub struct OptionIpaProof<GA: CurveAffine> {
+    pub l: Vec<Option<GA>>,
+    pub r: Vec<Option<GA>>,
+    pub a: Option<GA::Scalar>,
 }
 
-impl<G: CurveProjective> OptionIpaProof<G> {
+impl<GA: CurveAffine> OptionIpaProof<GA> {
     pub fn with_depth(depth: usize) -> Self {
         Self {
             l: vec![None; depth],
@@ -34,8 +34,8 @@ impl<G: CurveProjective> OptionIpaProof<G> {
     }
 }
 
-impl<G: CurveProjective> From<IpaProof<G>> for OptionIpaProof<G> {
-    fn from(ipa_proof: IpaProof<G>) -> Self {
+impl<GA: CurveAffine> From<IpaProof<GA>> for OptionIpaProof<GA> {
+    fn from(ipa_proof: IpaProof<GA>) -> Self {
         Self {
             l: ipa_proof.l.iter().map(|&l| Some(l)).collect::<Vec<_>>(),
             r: ipa_proof.r.iter().map(|&r| Some(r)).collect::<Vec<_>>(),
@@ -52,7 +52,7 @@ pub fn generate_challenges<
     AD: AuxData<E>,
 >(
     cs: &mut CS,
-    ipa_proof: OptionIpaProof<E::G1>,
+    ipa_proof: OptionIpaProof<E::G1Affine>,
     transcript: &mut WrappedTranscript<E>,
     rns_params: &'a RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
     aux_data: &AD,

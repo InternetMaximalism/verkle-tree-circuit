@@ -1,8 +1,9 @@
 // use franklin_crypto::bellman::bls12_381::Bls12;
 use franklin_crypto::bellman::pairing::Engine;
 use franklin_crypto::bellman::plonk::better_better_cs::cs::{
-    Circuit, ConstraintSystem, Gate, GateInternal, Width4MainGateWithDNext,
+    Circuit, ConstraintSystem, Width4MainGateWithDNext,
 };
+// use franklin_crypto::bellman::plonk::better_better_cs::cs::{Gate, GateInternal};
 use franklin_crypto::bellman::SynthesisError;
 use franklin_crypto::circuit::Assignment;
 use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
@@ -49,13 +50,6 @@ impl<E: Engine, N: ArrayLength<Option<E::Fr>>> Circuit<E> for PoseidonCircuit<E,
         let result = calc_poseidon(cs, &inputs)?;
         let output = AllocatedNum::alloc_input(cs, || Ok(*self.output.get()?))?;
         result.sub(cs, &output)?.assert_is_zero(cs)?;
-
-        // let mut row = vec![];
-        // row.push(cs.get_explicit_zero()?);
-        // row.reverse();
-
-        // let gate = TwoBitDecompositionRangecheckCustomGate::default();
-        // cs.new_single_gate_for_trace_step(&gate, &[], &[], &[])?;
 
         Ok(())
     }

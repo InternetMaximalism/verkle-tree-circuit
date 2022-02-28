@@ -24,12 +24,12 @@ use super::utils::read_field_element_le_from;
 
 pub struct BatchProofCircuit<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> {
     pub transcript_params: Option<E::Fr>,
-    pub proof: OptionIpaProof<E::G1>,
+    pub proof: OptionIpaProof<E::G1Affine>,
     pub d: Option<E::G1Affine>,
     pub commitments: Vec<Option<E::G1Affine>>,
     pub ys: Vec<Option<E::Fr>>,
     pub zs: Vec<Option<u8>>,
-    pub ipa_conf: IpaConfig<E::G1>,
+    pub ipa_conf: IpaConfig<E::G1Affine>,
     pub rns_params: &'a BaseRnsParameters<E>,
     pub aux_data: AD,
     pub _wp: std::marker::PhantomData<WP>,
