@@ -1,4 +1,4 @@
-pub mod batch_proof;
+pub mod batch_proof_fr;
 pub mod discrete_log;
 // pub mod ipa;
 pub mod ipa_fr;

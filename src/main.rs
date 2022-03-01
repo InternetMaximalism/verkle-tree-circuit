@@ -73,7 +73,7 @@ fn exec_ipa_fr_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn open_crs_for_log2_of_size(_log2_n: usize) -> Crs<Bn256, CrsForMonomialForm> {
-    let full_path = Path::new("./tests").join(CIRCUIT_NAME).join("crs");
+    let full_path = Path::new("./tests").join("crs");
     println!("Opening {}", full_path.to_string_lossy());
     let file = File::open(&full_path).unwrap();
     let reader = std::io::BufReader::with_capacity(1 << 24, file);

@@ -10,7 +10,7 @@ use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecomp
 use franklin_crypto::plonk::circuit::boolean::Boolean;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::AuxData;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::WrappedAffinePoint;
-use verkle_tree::ipa_fr::config::IpaConfig;
+use verkle_tree::ipa_fr::config::{Committer, IpaConfig};
 use verkle_tree::ipa_fr::rns::BaseRnsParameters;
 use verkle_tree::ipa_fr::utils::log2_ceil;
 

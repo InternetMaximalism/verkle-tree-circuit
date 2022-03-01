@@ -42,7 +42,7 @@ mod batch_proof_api_tests {
     use franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
     use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr, G1Affine};
     use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::without_flag_unchecked::WrapperUnchecked;
-    use verkle_tree::batch_proof::BatchProof;
+    use verkle_tree::batch_proof_fr::BatchProof;
     use verkle_tree::ipa_fr::config::{IpaConfig, Committer};
     use verkle_tree::ipa_fr::rns::BaseRnsParameters;
     use verkle_tree::ipa_fr::transcript::{PoseidonBn256Transcript, Bn256Transcript};
@@ -50,7 +50,7 @@ mod batch_proof_api_tests {
 
     use super::{BatchProofCircuitInput, VkAndProof};
 
-    const CIRCUIT_NAME: &str = "batch_proof";
+    const CIRCUIT_NAME: &str = "batch_proof_fr";
 
     fn make_test_input(
         fs: Vec<Vec<Fr>>,
@@ -89,7 +89,7 @@ mod batch_proof_api_tests {
     }
 
     fn open_crs_for_log2_of_size(_log2_n: usize) -> Crs<Bn256, CrsForMonomialForm> {
-        let full_path = Path::new("./tests").join(CIRCUIT_NAME).join("crs");
+        let full_path = Path::new("./tests").join("crs");
         println!("Opening {}", full_path.to_string_lossy());
         let file = File::open(&full_path).unwrap();
         let reader = std::io::BufReader::with_capacity(1 << 24, file);
