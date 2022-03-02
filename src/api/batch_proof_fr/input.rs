@@ -114,7 +114,7 @@ mod batch_proof_api_tests {
             .map(|poly| test_poly::<Fr>(&poly, domain_size))
             .collect::<Vec<_>>();
         let zs = vec![1, 0];
-        let prover_transcript = PoseidonBn256Transcript::with_bytes(b"ipa");
+        let prover_transcript = PoseidonBn256Transcript::with_bytes(b"multi_proof");
 
         // let output = read_field_element_le_from::<Fr>(&[
         //   251, 230, 185, 64, 12, 136, 124, 164, 37, 71, 120, 65, 234, 225, 30, 7, 157, 148, 169, 225,
