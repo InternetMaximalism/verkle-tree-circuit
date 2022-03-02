@@ -9,11 +9,11 @@ use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::WrappedAffinePoint;
 use verkle_tree::ipa_fr::config::IpaConfig;
 use verkle_tree::ipa_fr::rns::BaseRnsParameters;
+use verkle_tree::ipa_fr::utils::read_field_element_le;
 
 use super::ipa_fr::circuit::IpaCircuit;
 use super::ipa_fr::proof::OptionIpaProof;
 use super::ipa_fr::transcript::{Transcript, WrappedTranscript};
-use super::utils::read_field_element_le_from;
 
 // #[derive(Clone, Debug)]
 // pub struct OptionIpaProof<G: CurveProjective> {
@@ -101,10 +101,7 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
             // helper_scalars[i] = r^i / (t - z_i)
             let z_i: AllocatedNum<E> = AllocatedNum::alloc(cs, || {
                 self.zs[i]
-                    .map(|v| {
-                        let mut reader = std::io::Cursor::new(vec![v]);
-                        read_field_element_le_from::<E::Fr, _>(&mut reader).unwrap()
-                    })
+                    .map(|v| read_field_element_le::<E::Fr>(&[v]).unwrap())
                     .ok_or(SynthesisError::Unsatisfiable)
             })?;
             let t_minus_z_i = t.sub(cs, &z_i)?;
@@ -126,7 +123,16 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
 
         // Compute E = SUM C_i * (r^i / t - z_i) = SUM C_i * helper_scalars
         assert!(!self.commitments.is_empty(), "`e` must be non-zero.");
-        let mut e = WP::alloc(cs, self.commitments[0], self.rns_params, &self.aux_data)?;
+        let mut e = {
+            let mut tmp = WP::alloc(cs, self.commitments[0], self.rns_params, &self.aux_data)?;
+            tmp.mul(
+                cs,
+                &helper_scalars[0],
+                None,
+                self.rns_params,
+                &self.aux_data,
+            )?
+        };
         for (i, helper_scalars_i) in helper_scalars.iter().enumerate().skip(1) {
             let mut tmp = WP::alloc(cs, self.commitments[i], self.rns_params, &self.aux_data)?;
             tmp = tmp.mul(cs, helper_scalars_i, None, self.rns_params, &self.aux_data)?;
