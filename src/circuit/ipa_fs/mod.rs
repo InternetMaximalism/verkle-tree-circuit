@@ -12,7 +12,7 @@ use franklin_crypto::circuit::num::AllocatedNum;
 use franklin_crypto::jubjub::JubjubEngine;
 // use franklin_crypto::plonk::circuit::verifier_circuit::channel::ChannelGadget;
 
-use crate::circuit::ipa::config::compute_barycentric_coefficients;
+use crate::circuit::ipa_fs::config::compute_barycentric_coefficients;
 
 use self::config::IpaConfig;
 use self::proof::{generate_challenges, OptionIpaProof};

@@ -23,7 +23,7 @@ use verkle_tree::ipa_fr::config::IpaConfig;
 use verkle_tree::ipa_fr::proof::IpaProof;
 use verkle_tree::ipa_fr::rns::BaseRnsParameters;
 
-use crate::circuit::batch_proof::BatchProofCircuit;
+use crate::circuit::batch_proof_fr::BatchProofCircuit;
 use crate::circuit::ipa_fr::proof::OptionIpaProof;
 
 pub struct BatchProofCircuitInput {
