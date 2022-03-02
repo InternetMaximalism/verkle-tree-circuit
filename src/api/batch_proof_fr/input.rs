@@ -102,22 +102,19 @@ mod batch_proof_api_tests {
     #[test]
     fn test_batch_proof_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
         let crs = open_crs_for_log2_of_size(23);
-        let domain_size = 256;
+        let domain_size = 2;
         let ipa_conf = IpaConfig::<G1Affine>::new(domain_size);
         let rns_params = &BaseRnsParameters::<Bn256>::new_for_field(68, 110, 4);
 
         // Prover view
-        let polys = vec![
-            vec![12, 97, 37, 0, 1, 208, 132, 3],
-            vec![12, 97, 37, 0, 1, 208, 132, 3],
-        ];
+        let polys = vec![vec![12, 97], vec![37, 0]];
         // let poly = vec![12, 97, 37, 0, 1, 208, 132, 3];
         let fs = polys
             .iter()
             .map(|poly| test_poly::<Fr>(&poly, domain_size))
             .collect::<Vec<_>>();
-        let zs = vec![5, 1];
-        let prover_transcript = PoseidonBn256Transcript::with_bytes(b"ipa");
+        let zs = vec![1, 0];
+        let prover_transcript = PoseidonBn256Transcript::with_bytes(b"multi_proof");
 
         // let output = read_field_element_le_from::<Fr>(&[
         //   251, 230, 185, 64, 12, 136, 124, 164, 37, 71, 120, 65, 234, 225, 30, 7, 157, 148, 169, 225,
@@ -132,12 +129,11 @@ mod batch_proof_api_tests {
             &ipa_conf,
         )?;
 
-        let rns_params = BaseRnsParameters::<Bn256>::new_for_field(68, 110, 4);
         let VkAndProof(vk, proof) = circuit_input
             .create_plonk_proof::<WrapperUnchecked<'_, Bn256>>(
                 prover_transcript.into_params(),
                 ipa_conf,
-                &rns_params,
+                rns_params,
                 crs,
             )?;
         let proof_path = Path::new("./tests").join(CIRCUIT_NAME).join("proof_case1");
