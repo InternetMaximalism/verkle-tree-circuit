@@ -15,13 +15,6 @@ use super::ipa_fr::circuit::IpaCircuit;
 use super::ipa_fr::proof::OptionIpaProof;
 use super::ipa_fr::transcript::{Transcript, WrappedTranscript};
 
-// #[derive(Clone, Debug)]
-// pub struct OptionIpaProof<G: CurveProjective> {
-//     pub l: Vec<Option<G::Affine>>,
-//     pub r: Vec<Option<G::Affine>>,
-//     pub a: Option<G::Scalar>,
-// }
-
 pub struct BatchProofCircuit<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> {
     pub transcript_params: Option<E::Fr>,
     pub proof: OptionIpaProof<E::G1Affine>,
@@ -50,7 +43,6 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
     fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
         let transcript_params = AllocatedNum::alloc(cs, || Ok(self.transcript_params.unwrap()))?;
         let mut transcript = WrappedTranscript::new(transcript_params);
-        // transcript.DomainSep("multiproof");
 
         if self.commitments.len() != self.ys.len() {
             panic!(
@@ -79,10 +71,9 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
             let zi = self.zs[i]
                 .map(|zi| E::Fr::from_repr(<E::Fr as PrimeField>::Repr::from(zi as u64)).unwrap());
             let allocated_zi = AllocatedNum::alloc(cs, || Ok(zi.unwrap()))?;
-            transcript.commit_alloc_num(cs, allocated_zi)?;
+            transcript.commit_alloc_num(cs, allocated_zi)?; // z
             let allocated_yi = AllocatedNum::alloc(cs, || Ok(self.ys[i].unwrap()))?;
-            transcript.commit_alloc_num(cs, allocated_yi)?;
-            // y
+            transcript.commit_alloc_num(cs, allocated_yi)?; // y
         }
 
         let r = transcript.get_challenge();

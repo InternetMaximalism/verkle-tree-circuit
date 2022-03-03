@@ -13,7 +13,7 @@ cargo --version # >= 1.56.0
 git clone git@github.com:InternetMaximalism/verkle-tree-circuit.git
 git submodule init
 git submodule update
-cargo test --package verkle-circuit --lib -- crs::crs_tests::test_crs_serialization --exact --nocapture # create common reference string (CRS) for PlonK
+cargo run crs # create common reference string (CRS) for PlonK
 ```
 
 **The Verkle tree circuit verification does not work yet.**

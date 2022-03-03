@@ -32,8 +32,6 @@ pub fn run(circuit_input: CircuitInput) -> anyhow::Result<()> {
     let rng = &mut rand::thread_rng();
     let setup = generate_random_parameters::<Bn256, _, _>(dummy_circuit, rng)?;
 
-    // let vk = setup.vk;
-
     // prove
     println!("prove");
     let jubjub_params = AltJubjubBn256::new();
