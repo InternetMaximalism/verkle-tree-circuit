@@ -61,8 +61,8 @@ pub fn generate_challenges<
     for (&l, &r) in ipa_proof.l.iter().zip(&ipa_proof.r) {
         let wrapped_l = WP::alloc(cs, l, rns_params, aux_data)?;
         let wrapped_r = WP::alloc(cs, r, rns_params, aux_data)?;
-        transcript.commit_wrapped_affine(cs, wrapped_l)?;
-        transcript.commit_wrapped_affine(cs, wrapped_r)?;
+        transcript.commit_point(cs, &wrapped_l)?;
+        transcript.commit_point(cs, &wrapped_r)?;
 
         let c = transcript.get_challenge();
         challenges.push(c);

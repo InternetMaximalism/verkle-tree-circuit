@@ -38,8 +38,6 @@ pub struct IpaCircuit<'a, E: JubjubEngine> {
 
 //     let pk_path = Path::new("./tests/ipa/proving_key");
 //     let vk_path = Path::new("./tests/ipa/verifying_key");
-//     // let size = 2usize.pow(21); // 2097152
-//     // make_crs_with_file::<franklin_crypto::bellman::pairing::bn256::Bn256>(crs_path, size)?;
 //     generate_random_parameters_with_file(pk_path, vk_path)?;
 
 //     Ok(())

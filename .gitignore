@@ -1,4 +1,4 @@
 /target
-/tests/crs
-/tests/*/*
+/test_cases/crs
+/test_cases/*/*
 !.gitkeep

@@ -49,7 +49,7 @@ enum CrsCommand {
     Create {
         #[structopt(default_value = "23")]
         log2_size: usize,
-        #[structopt(short, long, parse(from_os_str), default_value = "./tests/crs")]
+        #[structopt(short, long, parse(from_os_str), default_value = "./test_cases/crs")]
         path: PathBuf,
     },
 }

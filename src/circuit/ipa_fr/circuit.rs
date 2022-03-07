@@ -83,7 +83,7 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
             .into());
         }
 
-        transcript.commit_wrapped_affine(cs, commitment.clone())?; // C
+        transcript.commit_point(cs, &commitment)?; // C
         transcript.commit_alloc_num(cs, eval_point)?; // input point
         transcript.commit_alloc_num(cs, inner_prod)?; // output point
 

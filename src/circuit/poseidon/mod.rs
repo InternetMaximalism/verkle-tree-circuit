@@ -55,8 +55,6 @@ impl<E: Engine, N: ArrayLength<Option<E::Fr>>> Circuit<E> for PoseidonCircuit<E,
     }
 }
 
-/// `output` = `input` ** `alpha`
-/// This function is required that `alpha` is relatively prime to `p`.
 // pub fn calc_sigma<E, CS>(
 //   cs: &mut CS,
 //   input: AllocatedNum<E>,
@@ -88,8 +86,10 @@ impl<E: Engine, N: ArrayLength<Option<E::Fr>>> Circuit<E> for PoseidonCircuit<E,
 //   Ok(output)
 // }
 
-/// `output` = `input` ** `alpha`
-/// TODO: This function is required that `alpha` is relatively prime to `p`.
+/// Generate constraints that
+/// `output` = `input` ** `alpha`.
+///
+/// This function is required that `alpha` (= 5) is relatively prime to the order `p` of `E::Fr`.
 pub fn calc_sigma<E, CS>(
     cs: &mut CS,
     input: AllocatedNum<E>,
@@ -105,7 +105,8 @@ where
     Ok(input5)
 }
 
-/// `output` = `input` + `C[r]`
+/// Generate constraints that
+/// `output` = `input` + `C[r]`.
 pub fn add_round_constant<E, CS>(
     cs: &mut CS,
     input: AllocatedNum<E>,
@@ -122,7 +123,8 @@ where
     Ok(output)
 }
 
-/// `outputs` = `inputs` * `m` (matrix multiplication)
+/// Generate constraints that
+/// `outputs` = `inputs` * `m` (matrix multiplication).
 pub fn product_mds_with_matrix<E, CS>(
     cs: &mut CS,
     inputs: &[AllocatedNum<E>],
@@ -185,6 +187,7 @@ where
 //   Ok(result)
 // }
 
+/// Generate constraints for Poseidon hash.
 pub fn calc_poseidon<E, CS>(
     cs: &mut CS,
     inputs: &[AllocatedNum<E>],

@@ -98,7 +98,7 @@ mod ipa_api_tests {
     }
 
     fn open_crs_for_log2_of_size(_log2_n: usize) -> Crs<Bn256, CrsForMonomialForm> {
-        let full_path = Path::new("./tests").join("crs");
+        let full_path = Path::new("./test_cases").join("crs");
         println!("Opening {}", full_path.to_string_lossy());
         let file = File::open(&full_path).unwrap();
         let reader = std::io::BufReader::with_capacity(1 << 24, file);
@@ -142,14 +142,18 @@ mod ipa_api_tests {
                 &rns_params,
                 crs,
             )?;
-        let proof_path = Path::new("./tests").join(CIRCUIT_NAME).join("proof_case1");
+        let proof_path = Path::new("./test_cases")
+            .join(CIRCUIT_NAME)
+            .join("proof_case1");
         let file = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
             .open(proof_path)?;
         proof.write(file)?;
-        let vk_path = Path::new("./tests").join(CIRCUIT_NAME).join("vk_case1");
+        let vk_path = Path::new("./test_cases")
+            .join(CIRCUIT_NAME)
+            .join("vk_case1");
         let file = OpenOptions::new()
             .write(true)
             .create(true)
@@ -195,7 +199,7 @@ mod ipa_api_tests {
             inner_prod: ip,
         };
 
-        let file_path = Path::new("./tests")
+        let file_path = Path::new("./test_cases")
             .join(CIRCUIT_NAME)
             .join("public_inputs");
         let mut file = OpenOptions::new()
@@ -247,7 +251,7 @@ mod ipa_api_tests {
         // let _ip = inner_prod(&padded_poly, &lagrange_coeffs)?;
         // assert_eq!(_ip, ip);
 
-        let file_path = Path::new("./tests")
+        let file_path = Path::new("./test_cases")
             .join(CIRCUIT_NAME)
             .join("public_inputs.json");
         let path = std::env::current_dir()?;

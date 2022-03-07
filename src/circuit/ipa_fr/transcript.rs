@@ -7,6 +7,7 @@ use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::Wra
 
 use crate::circuit::poseidon::calc_poseidon;
 
+/// The trait of transcript objects.
 pub trait Transcript<E: Engine>: Sized + Clone {
     type Params;
 
@@ -25,6 +26,7 @@ pub trait Transcript<E: Engine>: Sized + Clone {
     fn get_challenge(&mut self) -> AllocatedNum<E>;
 }
 
+/// The transcript object for PlonK verification.
 #[derive(Clone)]
 pub struct WrappedTranscript<E>
 where
@@ -36,10 +38,12 @@ where
 impl<E: Engine> Transcript<E> for WrappedTranscript<E> {
     type Params = AllocatedNum<E>;
 
+    /// Create new transcript object with init parameter.
     fn new(init_state: AllocatedNum<E>) -> Self {
         Self { state: init_state }
     }
 
+    /// Commit a `AllocatedNum` value.
     fn commit_alloc_num<CS: ConstraintSystem<E>>(
         &mut self,
         cs: &mut CS,
@@ -51,10 +55,12 @@ impl<E: Engine> Transcript<E> for WrappedTranscript<E> {
         Ok(())
     }
 
+    /// Generate a pseudo-random `AllocatedNum` value.
     fn get_challenge(&mut self) -> AllocatedNum<E> {
         self.state
     }
 
+    /// Commit a `WP` value.
     fn commit_point<'a, CS: ConstraintSystem<E>, WP: WrappedAffinePoint<'a, E>>(
         &mut self,
         cs: &mut CS,
@@ -75,6 +81,7 @@ impl<E: Engine> Transcript<E> for WrappedTranscript<E> {
 }
 
 impl<E: Engine> WrappedTranscript<E> {
+    /// Commit a `E::Fr` value.
     pub fn commit_fr<CS: ConstraintSystem<E>>(
         &mut self,
         cs: &mut CS,
@@ -86,6 +93,7 @@ impl<E: Engine> WrappedTranscript<E> {
         Ok(())
     }
 
+    /// Commit a `FieldElement` value.
     pub fn commit_field_element<'a, CS: ConstraintSystem<E>, F: PrimeField>(
         &mut self,
         cs: &mut CS,
@@ -104,17 +112,6 @@ impl<E: Engine> WrappedTranscript<E> {
 
             self.commit_alloc_num(cs, v)?;
         }
-
-        Ok(())
-    }
-
-    pub fn commit_wrapped_affine<'a, CS: ConstraintSystem<E>, WP: WrappedAffinePoint<'a, E>>(
-        &mut self,
-        cs: &mut CS,
-        element: WP,
-    ) -> Result<(), SynthesisError> {
-        self.commit_field_element(cs, element.get_point().get_x())?;
-        self.commit_field_element(cs, element.get_point().get_y())?;
 
         Ok(())
     }
