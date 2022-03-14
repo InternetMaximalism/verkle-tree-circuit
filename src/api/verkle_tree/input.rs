@@ -25,7 +25,7 @@ mod batch_proof_api_tests {
         rns_params: &BaseRnsParameters<Bn256>,
         ipa_conf: &IpaConfig<G1Affine>,
     ) -> anyhow::Result<BatchProofCircuitInput> {
-        tree.compute_commitment().unwrap();
+        tree.compute_digest().unwrap();
 
         let result = tree.get_witnesses(keys).unwrap();
         println!("commitments: {:?}", result.commitment_elements.commitments);
