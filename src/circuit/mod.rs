@@ -5,10 +5,12 @@ pub mod discrete_log;
 /// This is the circuit implementation of the IPA verification.
 pub mod ipa_fr;
 
-// pub mod ipa_fs;
+pub mod ipa_fs;
 
 /// This is the circuit implementation of the Poseidon hash verification.
 pub mod poseidon;
+
+pub mod poseidon_fs;
 
 pub mod sample;
 
