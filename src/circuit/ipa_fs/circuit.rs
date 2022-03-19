@@ -9,8 +9,7 @@ use verkle_tree::ipa_fs::config::{Committer, IpaConfig};
 use verkle_tree::ipa_fs::utils::log2_ceil;
 
 use crate::circuit::ipa_fs::config::compute_barycentric_coefficients;
-use crate::circuit::ipa_fs::transcript::convert_fs_to_fr;
-use crate::circuit::ipa_fs::utils::convert_bits_le;
+use crate::circuit::ipa_fs::utils::{convert_bits_le, convert_fs_to_fr};
 
 use super::proof::{generate_challenges, OptionIpaProof};
 use super::transcript::{Transcript, WrappedTranscript};
@@ -18,7 +17,7 @@ use super::utils::{commit, fold_points, fold_scalars};
 
 #[derive(Clone)]
 pub struct IpaCircuit<'a, E: JubjubEngine> {
-    pub transcript_params: E::Fs,
+    pub transcript_params: E::Fr,
     pub commitment: Option<edwards::Point<E, Unknown>>,
     pub proof: OptionIpaProof<E>,
     pub eval_point: Option<E::Fs>,
@@ -29,7 +28,8 @@ pub struct IpaCircuit<'a, E: JubjubEngine> {
 
 impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
     fn synthesize<CS: ConstraintSystem<E>>(self, cs: &mut CS) -> Result<(), SynthesisError> {
-        let transcript_params = convert_fs_to_fr::<E>(&self.transcript_params).unwrap();
+        let transcript_params = self.transcript_params;
+        dbg!(transcript_params);
         let wrapped_transcript_params =
             AllocatedNum::<E>::alloc(cs.namespace(|| "alloc transcript_params"), || {
                 Ok(transcript_params)
@@ -95,6 +95,7 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
         transcript.commit_field_element(cs, &inner_prod)?;
 
         let w = transcript.get_challenge(cs)?;
+        dbg!(w);
 
         let raw_q = self.ipa_conf.q.into_xy();
         let q_x = AllocatedNum::alloc(cs.namespace(|| "alloc Q_x"), || Ok(raw_q.0))?;
@@ -129,6 +130,9 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
         let (challenges, wrapped_proof) =
             generate_challenges(cs, &self.proof.clone(), &mut transcript, self.jubjub_params)
                 .unwrap();
+        for x in challenges.iter() {
+            dbg!(x);
+        }
 
         let mut challenges_inv = Vec::with_capacity(challenges.len());
 

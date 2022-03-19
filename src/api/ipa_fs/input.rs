@@ -37,7 +37,7 @@ mod ipa_api_tests {
         babyjubjub::{JubjubBn256, JubjubEngine},
         bellman::{
             groth16::{prepare_verifying_key, verify_proof},
-            pairing::bn256::Bn256,
+            pairing::bn256::{Bn256, Fr},
         },
     };
     use verkle_tree::{
@@ -52,12 +52,12 @@ mod ipa_api_tests {
 
     use super::IpaCircuitInput;
 
-    const CIRCUIT_NAME: &str = "ipa_fr";
+    const CIRCUIT_NAME: &str = "ipa_fs";
 
     fn make_test_input(
         poly: &[<Bn256 as JubjubEngine>::Fs],
         eval_point: <Bn256 as JubjubEngine>::Fs,
-        transcript_params: <Bn256 as JubjubEngine>::Fs,
+        transcript_params: Fr,
         jubjub_params: &JubjubBn256,
         ipa_conf: &IpaConfig<Bn256>,
     ) -> anyhow::Result<IpaCircuitInput> {
@@ -105,7 +105,7 @@ mod ipa_api_tests {
             &ipa_conf,
         )?;
 
-        let (vk, proof) = circuit_input.create_plonk_proof(
+        let (vk, proof) = circuit_input.create_groth16_proof(
             prover_transcript.into_params(),
             ipa_conf,
             jubjub_params,
@@ -216,9 +216,9 @@ impl IpaCircuitInput {
         }
     }
 
-    pub fn create_plonk_proof(
+    pub fn create_groth16_proof(
         &self,
-        transcript_params: <Bn256 as JubjubEngine>::Fs,
+        transcript_params: Fr,
         ipa_conf: IpaConfig<Bn256>,
         jubjub_params: &JubjubBn256,
     ) -> Result<(VerifyingKey<Bn256>, Proof<Bn256>), SynthesisError> {

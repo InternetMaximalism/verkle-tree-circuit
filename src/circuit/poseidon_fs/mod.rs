@@ -30,13 +30,21 @@ impl<E: Engine, N: ArrayLength<Option<E::Fr>>> Circuit<E> for PoseidonCircuit<E,
         let inputs = self
             .inputs
             .iter()
-            .map(|x| AllocatedNum::alloc(cs.namespace(|| ""), || Ok(*x.get()?)))
+            .enumerate()
+            .map(|(i, x)| {
+                AllocatedNum::alloc(cs.namespace(|| format!("allocate input[{}]", i)), || {
+                    Ok(*x.get()?)
+                })
+            })
             .collect::<Result<Vec<_>, SynthesisError>>()?;
         let result = calc_poseidon(cs, &inputs)?;
-        let output = AllocatedNum::alloc(cs.namespace(|| ""), || Ok(*self.output.get()?))?;
+        let output = AllocatedNum::alloc(cs.namespace(|| "allocate output"), || {
+            Ok(*self.output.get()?)
+        })?;
+        output.inputize(cs.namespace(|| "output is public"))?;
         result
-            .sub(cs.namespace(|| ""), &output)?
-            .assert_zero(cs.namespace(|| ""))?;
+            .sub(cs.namespace(|| "subtract output from result"), &output)?
+            .assert_zero(cs.namespace(|| "result is equal to output"))?;
 
         Ok(())
     }

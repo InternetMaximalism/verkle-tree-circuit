@@ -1,5 +1,5 @@
 use franklin_crypto::babyjubjub::JubjubEngine;
-use franklin_crypto::bellman::{ConstraintSystem, PrimeField, SynthesisError};
+use franklin_crypto::bellman::{ConstraintSystem, SynthesisError};
 use franklin_crypto::circuit::baby_ecc::EdwardsPoint;
 use franklin_crypto::circuit::num::AllocatedNum;
 use verkle_tree::ff_utils::bn256_fs::Bn256Fs;
@@ -8,7 +8,7 @@ use verkle_tree::ipa_fs::transcript::{from_bytes_le, to_bytes_le};
 
 use crate::circuit::poseidon_fs::calc_poseidon;
 
-use super::utils::convert_fr_to_fs;
+use super::utils::{convert_fr_to_fs, convert_fs_to_fr};
 
 pub fn convert_ff_to_ff_ce<E: JubjubEngine>(value: Bn256Fs) -> anyhow::Result<E::Fs> {
     read_field_element_le::<E::Fs>(&to_bytes_le(&value))
@@ -24,11 +24,6 @@ pub trait Transcript<E: JubjubEngine>: Sized + Clone {
         &mut self,
         cs: &mut CS,
         element: &Option<E::Fs>,
-    ) -> Result<(), SynthesisError>;
-    fn commit_alloc_num<CS: ConstraintSystem<E>>(
-        &mut self,
-        cs: &mut CS,
-        element: &AllocatedNum<E>,
     ) -> Result<(), SynthesisError>;
     fn commit_point<CS: ConstraintSystem<E>>(
         &mut self,
@@ -49,17 +44,6 @@ where
     state: AllocatedNum<E>,
 }
 
-pub fn convert_fs_to_fr<E: JubjubEngine>(value: &E::Fs) -> anyhow::Result<E::Fr> {
-    let raw_value = value.into_repr();
-    let mut raw_result = <E::Fr as PrimeField>::Repr::default();
-    for (r, &v) in raw_result.as_mut().iter_mut().zip(raw_value.as_ref()) {
-        let _ = std::mem::replace(r, v);
-    }
-    let result = E::Fr::from_repr(raw_result)?;
-
-    Ok(result)
-}
-
 impl<E> Transcript<E> for WrappedTranscript<E>
 where
     E: JubjubEngine,
@@ -77,20 +61,7 @@ where
         let wrapped_element = AllocatedNum::<E>::alloc(cs.namespace(|| ""), || {
             element_fr.ok_or(SynthesisError::UnconstrainedVariable)
         })?;
-        let inputs = vec![self.state.clone(), wrapped_element];
-        self.state = calc_poseidon::<E, CS>(cs, &inputs)?;
-
-        Ok(())
-    }
-
-    /// Commit a `AllocatedNum` value.
-    fn commit_alloc_num<CS: ConstraintSystem<E>>(
-        &mut self,
-        cs: &mut CS,
-        element: &AllocatedNum<E>,
-    ) -> Result<(), SynthesisError> {
-        let inputs = vec![self.state.clone(), element.clone()];
-        self.state = calc_poseidon::<E, CS>(cs, &inputs)?;
+        self.commit_alloc_num(cs, &wrapped_element)?;
 
         Ok(())
     }
@@ -117,6 +88,24 @@ where
         let result = convert_fr_to_fs(cs, &self.state).unwrap();
 
         Ok(result)
+    }
+}
+
+impl<E> WrappedTranscript<E>
+where
+    E: JubjubEngine,
+{
+    /// Commit a `AllocatedNum` value.
+    fn commit_alloc_num<CS: ConstraintSystem<E>>(
+        &mut self,
+        cs: &mut CS,
+        element: &AllocatedNum<E>,
+    ) -> Result<(), SynthesisError> {
+        let inputs = vec![self.state.clone(), element.clone()];
+        self.state = calc_poseidon::<E, CS>(cs, &inputs)?;
+        dbg!(self.state.get_value());
+
+        Ok(())
     }
 }
 

@@ -32,6 +32,17 @@ pub fn convert_fr_to_fs<E: JubjubEngine, CS: ConstraintSystem<E>>(
     Ok(result)
 }
 
+pub fn convert_fs_to_fr<E: JubjubEngine>(value: &E::Fs) -> anyhow::Result<E::Fr> {
+    let raw_value = value.into_repr();
+    let mut raw_result = <E::Fr as PrimeField>::Repr::default();
+    for (r, &v) in raw_result.as_mut().iter_mut().zip(raw_value.as_ref()) {
+        let _ = std::mem::replace(r, v);
+    }
+    let result = E::Fr::from_repr(raw_result)?;
+
+    Ok(result)
+}
+
 // Computes c[i] = a[i] + b[i] * x
 // returns c
 // panics if len(a) != len(b)
