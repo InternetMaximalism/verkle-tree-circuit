@@ -19,7 +19,7 @@ where
 }
 
 #[cfg(test)]
-mod ipa_api_tests {
+mod poseidon_fs_api_tests {
     use std::{fs::OpenOptions, path::Path};
 
     use franklin_crypto::bellman::{
@@ -35,7 +35,7 @@ mod ipa_api_tests {
 
     use super::PoseidonCircuitInput;
 
-    const CIRCUIT_NAME: &str = "ipa_fs";
+    const CIRCUIT_NAME: &str = "poseidon_fs";
 
     fn make_test_input(inputs: Vec<Fr>) -> PoseidonCircuitInput<typenum::U2> {
         let preimage = inputs
@@ -56,7 +56,7 @@ mod ipa_api_tests {
     }
 
     #[test]
-    fn test_ipa_fs_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_poseidon_fs_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
         let input1 = read_field_element_le::<Fr>(&[1]).unwrap();
         let input2 = read_field_element_le::<Fr>(&[2]).unwrap();
         let inputs = vec![input1, input2];

@@ -103,7 +103,6 @@ where
     ) -> Result<(), SynthesisError> {
         let inputs = vec![self.state.clone(), element.clone()];
         self.state = calc_poseidon::<E, CS>(cs, &inputs)?;
-        dbg!(self.state.get_value());
 
         Ok(())
     }

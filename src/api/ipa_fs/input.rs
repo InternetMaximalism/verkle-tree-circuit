@@ -105,6 +105,16 @@ mod ipa_api_tests {
             &ipa_conf,
         )?;
 
+        let is_ok = circuit_input.proof.check(
+            circuit_input.commitment.clone(),
+            eval_point,
+            circuit_input.inner_prod,
+            prover_transcript.clone().into_params(),
+            &ipa_conf,
+            jubjub_params,
+        )?;
+        assert!(is_ok);
+
         let (vk, proof) = circuit_input.create_groth16_proof(
             prover_transcript.into_params(),
             ipa_conf,

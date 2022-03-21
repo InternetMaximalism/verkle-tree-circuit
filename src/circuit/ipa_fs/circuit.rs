@@ -2,14 +2,14 @@ use std::io::{Error, ErrorKind};
 
 use franklin_crypto::babyjubjub::{edwards, JubjubEngine, Unknown};
 use franklin_crypto::bellman::{Circuit, ConstraintSystem};
-use franklin_crypto::bellman::{Field, SynthesisError};
+use franklin_crypto::bellman::{Field, PrimeField, SynthesisError};
 use franklin_crypto::circuit::baby_ecc::EdwardsPoint;
 use franklin_crypto::circuit::num::AllocatedNum;
 use verkle_tree::ipa_fs::config::{Committer, IpaConfig};
 use verkle_tree::ipa_fs::utils::log2_ceil;
 
 use crate::circuit::ipa_fs::config::compute_barycentric_coefficients;
-use crate::circuit::ipa_fs::utils::{convert_bits_le, convert_fs_to_fr};
+use crate::circuit::ipa_fs::utils::convert_bits_le;
 
 use super::proof::{generate_challenges, OptionIpaProof};
 use super::transcript::{Transcript, WrappedTranscript};
@@ -55,28 +55,34 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
 
         let eval_point = self.eval_point;
         let inner_prod = self.inner_prod;
-        let raw_commitment = if let Some(c) = self.commitment {
-            let (x, y) = c.into_xy();
-            (Some(x), Some(y))
-        } else {
-            (None, None)
+        let mut commitment = {
+            let raw_commitment = if let Some(c) = self.commitment {
+                let (x, y) = c.into_xy();
+                (Some(x), Some(y))
+            } else {
+                (None, None)
+            };
+            let commitment_x = AllocatedNum::alloc(cs.namespace(|| "alloc Q_x"), || {
+                raw_commitment
+                    .0
+                    .ok_or(SynthesisError::UnconstrainedVariable)
+            })?;
+            let commitment_y = AllocatedNum::alloc(cs.namespace(|| "alloc Q_y"), || {
+                raw_commitment
+                    .1
+                    .ok_or(SynthesisError::UnconstrainedVariable)
+            })?;
+
+            EdwardsPoint::interpret(
+                cs.namespace(|| "interpret Q"),
+                &commitment_x,
+                &commitment_y,
+                self.jubjub_params,
+            )?
         };
-        let commitment_x = AllocatedNum::alloc(cs.namespace(|| "alloc Q_x"), || {
-            raw_commitment
-                .0
-                .ok_or(SynthesisError::UnconstrainedVariable)
-        })?;
-        let commitment_y = AllocatedNum::alloc(cs.namespace(|| "alloc Q_y"), || {
-            raw_commitment
-                .1
-                .ok_or(SynthesisError::UnconstrainedVariable)
-        })?;
-        let mut commitment = EdwardsPoint::interpret(
-            cs.namespace(|| "interpret Q"),
-            &commitment_x,
-            &commitment_y,
-            self.jubjub_params,
-        )?;
+
+        dbg!(commitment.get_x().get_value());
+        dbg!(commitment.get_y().get_value());
 
         // let bit_limit = None; // Some(256usize);
         let mut b =
@@ -95,65 +101,94 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
         transcript.commit_field_element(cs, &inner_prod)?;
 
         let w = transcript.get_challenge(cs)?;
-        dbg!(w);
+        dbg!(w.map(|v| v.into_repr()));
 
-        let raw_q = self.ipa_conf.q.into_xy();
-        let q_x = AllocatedNum::alloc(cs.namespace(|| "alloc Q_x"), || Ok(raw_q.0))?;
-        let q_y = AllocatedNum::alloc(cs.namespace(|| "alloc Q_y"), || Ok(raw_q.1))?;
-        let mut q = EdwardsPoint::interpret(
-            cs.namespace(|| "interpret Q"),
-            &q_x,
-            &q_y,
-            self.jubjub_params,
-        )?;
+        let q = {
+            let raw_q = self.ipa_conf.q.into_xy();
+            let q_x = AllocatedNum::alloc(cs.namespace(|| "alloc Q_x"), || Ok(raw_q.0))?;
+            let q_y = AllocatedNum::alloc(cs.namespace(|| "alloc Q_y"), || Ok(raw_q.1))?;
+            EdwardsPoint::interpret(
+                cs.namespace(|| "interpret Q"),
+                &q_x,
+                &q_y,
+                self.jubjub_params,
+            )?
+        };
 
-        let mut qy = q.clone();
         let w_bits = convert_bits_le(cs, w, None)?;
-        q = q.mul(
+        let qw = q.mul(
             cs.namespace(|| "multiply q by w"),
             &w_bits,
             self.jubjub_params,
         )?;
-
+        dbg!(qw.get_x().get_value());
+        dbg!(qw.get_y().get_value());
         let inner_prod_bits = convert_bits_le(cs, inner_prod, None)?;
-        qy = qy.mul(
+        let qy = qw.mul(
             cs.namespace(|| "qy_mul_inner_prod"),
             &inner_prod_bits,
             self.jubjub_params,
         )?;
+        dbg!(qy.get_x().get_value());
+        dbg!(qy.get_y().get_value());
         commitment = commitment.add(
             cs.namespace(|| "add qy to commitment"),
             &qy,
             self.jubjub_params,
         )?;
+        dbg!(commitment.get_x().get_value());
+        dbg!(commitment.get_y().get_value());
 
         let (challenges, wrapped_proof) =
             generate_challenges(cs, &self.proof.clone(), &mut transcript, self.jubjub_params)
                 .unwrap();
-        for x in challenges.iter() {
-            dbg!(x);
-        }
 
         let mut challenges_inv = Vec::with_capacity(challenges.len());
 
         // Compute expected commitment
         for (i, x) in challenges.iter().enumerate() {
+            dbg!(x.map(|v| v.into_repr()));
             println!("challenges_inv: {}/{}", i, challenges.len());
             let l = wrapped_proof.l[i].clone();
             let r = wrapped_proof.r[i].clone();
 
-            let mut minus_one = E::Fr::one();
-            minus_one.negate();
+            // let mut minus_one = E::Fr::one();
+            // minus_one.negate();
             let x_inv = x.map(|v| v.inverse().unwrap());
             challenges_inv.push(x_inv.clone());
 
-            let one = E::Fs::one();
-            commitment = commit(
-                &mut cs.namespace(|| "commit"),
-                &[commitment, l, r],
-                &[Some(one), x.clone(), x_inv],
+            // let one = E::Fs::one();
+            let x_bits = convert_bits_le(cs, x.clone(), None)?;
+            let commitment_l = l.mul(
+                cs.namespace(|| format!("multiply l[{}] by x", i)),
+                &x_bits,
                 self.jubjub_params,
             )?;
+            let x_inv_bits = convert_bits_le(cs, x_inv, None)?;
+            let commitment_r = r.mul(
+                cs.namespace(|| format!("multiply r[{}] by x^-1", i)),
+                &x_inv_bits,
+                self.jubjub_params,
+            )?;
+            commitment = commitment
+                .add(
+                    cs.namespace(|| format!("add commitment[{}]_l to commitment", i)),
+                    &commitment_l,
+                    self.jubjub_params,
+                )?
+                .add(
+                    cs.namespace(|| format!("add commitment[{}]_r to commitment", i)),
+                    &commitment_r,
+                    self.jubjub_params,
+                )?;
+            // commitment = commit(
+            //     &mut cs.namespace(|| "commit"),
+            //     &[commitment, l, r],
+            //     &[Some(one), x.clone(), x_inv],
+            //     self.jubjub_params,
+            // )?;
+            dbg!(commitment.get_x().get_value());
+            dbg!(commitment.get_y().get_value());
         }
 
         println!("challenges_inv: {}/{}", challenges.len(), challenges.len());
@@ -193,6 +228,7 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
             let b_l = b_chunks.next().unwrap().to_vec();
             let b_r = b_chunks.next().unwrap().to_vec();
 
+            dbg!(x_inv.map(|v| v.into_repr()));
             b = fold_scalars(cs, &b_l, &b_r, x_inv).unwrap();
             current_basis = fold_points::<E, CS>(cs, &g_l, &g_r, x_inv, self.jubjub_params)?;
         }
@@ -218,30 +254,43 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
         // Compute `result = G[0] * a + (a * b[0]) * Q`.
         let proof_a = wrapped_proof.a;
         let mut result1 = current_basis[0].clone(); // result1 = G[0]
+        dbg!(result1.get_x().get_value());
+        dbg!(result1.get_y().get_value());
+
         let mut part_2a = b[0].clone(); // part_2a = b[0]
+        dbg!(part_2a.map(|v| v.into_repr()));
 
         let proof_a_bits = convert_bits_le(cs, proof_a, None)?;
         result1 = result1.mul(
             cs.namespace(|| "alloc proof_a"),
             &proof_a_bits,
             self.jubjub_params,
-        )?; // result1 *= proof_a
+        )?; // result1 = a[0] * current_basis[0]
+        dbg!(result1.get_x().get_value());
+        dbg!(result1.get_y().get_value());
 
         if let (Some(part_2a), Some(proof_a)) = (&mut part_2a, proof_a) {
-            part_2a.mul_assign(&proof_a); // part_2a *= proof_a
+            part_2a.mul_assign(&proof_a); // part_2a = a[0] * b[0]
         }
+        dbg!(part_2a.map(|v| v.into_repr()));
+
         let part_2a_bits = convert_bits_le(cs, part_2a, None)?;
-        let result2 = q.mul(
-            cs.namespace(|| "multiply q by part_2a_bits"),
+        let result2 = qw.mul(
+            cs.namespace(|| "multiply qw by part_2a_bits"),
             &part_2a_bits,
             self.jubjub_params,
-        )?; // q *= part_2a
+        )?; // result2 = a[0] * b[0] * w * Q
+        dbg!(result2.get_x().get_value());
+        dbg!(result2.get_y().get_value());
 
         let result = result1.add(
             cs.namespace(|| "add result1 to result2"),
             &result2,
             self.jubjub_params,
         )?; // result = result1 + result2
+
+        dbg!(result.get_x().get_value());
+        dbg!(result.get_y().get_value());
 
         // Ensure `commitment` is equal to `result`.
         commitment

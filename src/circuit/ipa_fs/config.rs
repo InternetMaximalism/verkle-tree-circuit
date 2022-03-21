@@ -1,5 +1,5 @@
 use franklin_crypto::babyjubjub::JubjubEngine;
-use franklin_crypto::bellman::{ConstraintSystem, Field, SynthesisError};
+use franklin_crypto::bellman::{ConstraintSystem, Field, PrimeField, SynthesisError};
 use verkle_tree::ipa_fr::config::PrecomputedWeights;
 use verkle_tree::ipa_fr::utils::read_field_element_le;
 
@@ -12,7 +12,8 @@ pub fn compute_barycentric_coefficients<E: JubjubEngine, CS: ConstraintSystem<E>
 
     // Compute A(x_i) * point - x_i
     let mut lagrange_evals = Vec::with_capacity(domain_size);
-    let mut total_prod = E::Fs::one();
+    let mut total_prod = <E::Fs as Field>::one();
+
     let barycentric_weights = precomputed_weights.get_barycentric_weights();
     for i in 0..domain_size {
         if let Some(p) = point {
@@ -23,15 +24,16 @@ pub fn compute_barycentric_coefficients<E: JubjubEngine, CS: ConstraintSystem<E>
             total_prod.mul_assign(&tmp); // total_prod *= (point - i)
 
             tmp.mul_assign(&weight); // lagrange_evals[i] = (point - i) * weight
-            let tmp = tmp.inverse().unwrap(); // lagrange_evals[i] = 1 / ((point - i) * weight)
-            lagrange_evals.push(Some(tmp));
+            lagrange_evals.push(tmp.inverse()); // lagrange_evals[i] = 1 / ((point - i) * weight)
         } else {
             lagrange_evals.push(None);
         }
     }
 
     for eval in lagrange_evals.iter_mut() {
-        eval.map(|mut e| e.mul_assign(&total_prod)); // lagrange_evals[i] = total_prod / ((point - i) * weight)
+        if let Some(e) = eval {
+            e.mul_assign(&total_prod) // lagrange_evals[i] = total_prod / ((point - i) * weight)
+        }
     }
 
     Ok(lagrange_evals)

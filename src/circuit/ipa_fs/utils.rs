@@ -3,10 +3,10 @@ use std::io::{Error, ErrorKind};
 use franklin_crypto::babyjubjub::JubjubEngine;
 use franklin_crypto::bellman::pairing::Engine;
 use franklin_crypto::bellman::{
-    ConstraintSystem, Field, LinearCombination, PrimeField, SynthesisError,
+    BitIterator, ConstraintSystem, Field, LinearCombination, PrimeField, SynthesisError,
 };
 use franklin_crypto::circuit::baby_ecc::EdwardsPoint;
-use franklin_crypto::circuit::boolean::{field_into_allocated_bits_le_fixed, Boolean};
+use franklin_crypto::circuit::boolean::{AllocatedBit, Boolean};
 use franklin_crypto::circuit::num::AllocatedNum;
 
 const FS_REPR_3_MASK: u64 = 0x03FFFFFFFFFFFFFF; // (250 - 192) bits
@@ -80,8 +80,8 @@ pub fn fold_scalars<E: JubjubEngine, CS: ConstraintSystem<E>>(
     }
 
     let mut result = b.to_vec();
-    for i in 0..result.len() {
-        if let (Some(r), Some(a), Some(x)) = (&mut result[i], a[i], x) {
+    for (result_i, a_i) in result.iter_mut().zip(a) {
+        if let (Some(r), Some(a), Some(x)) = (result_i, a_i, x) {
             r.mul_assign(x);
             r.add_assign(&a);
         }
@@ -106,9 +106,17 @@ pub fn fold_points<E: JubjubEngine, CS: ConstraintSystem<E>>(
 
     let mut result = b.to_vec();
     for i in 0..b.len() {
-        let x_bits = convert_bits_le(cs, *x, None)?;
-        result[i] = result[i].mul(cs.namespace(|| "mul"), &x_bits, jubjub_params)?;
-        result[i] = result[i].add(cs.namespace(|| "add"), &a[i], jubjub_params)?;
+        let x_bits = convert_bits_le(cs, *x, Some(E::Fs::NUM_BITS as usize))?;
+        result[i] = result[i].mul(
+            cs.namespace(|| format!("multiply result[{}] by x", i)),
+            &x_bits,
+            jubjub_params,
+        )?;
+        result[i] = result[i].add(
+            cs.namespace(|| format!("add a[{}] to result[{}]", i, i)),
+            &a[i],
+            jubjub_params,
+        )?;
     }
 
     Ok(result)
@@ -121,26 +129,25 @@ pub fn multi_scalar<E: JubjubEngine, CS: ConstraintSystem<E>>(
     jubjub_params: &E::Params,
 ) -> Result<EdwardsPoint<E>, SynthesisError> {
     let wrapped_result_x: AllocatedNum<E> = AllocatedNum::zero(cs.namespace(|| "zero"))?;
-    let wrapped_result_y: AllocatedNum<E> = AllocatedNum::zero(cs.namespace(|| "zero"))?;
+    let wrapped_result_y: AllocatedNum<E> = AllocatedNum::one::<CS>();
     let mut wrapped_result: EdwardsPoint<E> = EdwardsPoint::interpret(
-        cs.namespace(|| "wrapped_result"),
+        cs.namespace(|| "initialize wrapped_result"),
         &wrapped_result_x,
         &wrapped_result_y,
         jubjub_params,
-    )?; // E::G1Affine::one()
+    )?; // infinity of Edwards curve
     for i in 0..points.len() {
-        let scalar_i_bits = convert_bits_le(cs, scalars[i], None)?;
+        let scalar_i_bits = convert_bits_le(cs, scalars[i], Some(E::Fs::NUM_BITS as usize))?;
         let tmp = points[i].mul(
-            cs.namespace(|| "multiply points_i by scalar_i"),
+            cs.namespace(|| format!("multiply points[{}] by scalar[{}]", i, i)),
             &scalar_i_bits,
             jubjub_params,
         )?; // tmp = points[i] * scalars[i]
         wrapped_result = wrapped_result.add(
-            cs.namespace(|| "add wrapped_result to tmp"),
+            cs.namespace(|| format!("add wrapped_result to tmp[{}]", i)),
             &tmp,
             jubjub_params,
-        )?;
-        // result += tmp
+        )?; // result += tmp
     }
 
     Ok(wrapped_result)
@@ -205,4 +212,47 @@ where
     // packed_lc.enforce_zero(cs)?;
 
     Ok(bits.into_iter().map(|b| Boolean::from(b)).collect())
+}
+
+pub fn field_into_allocated_bits_le_fixed<E: Engine, CS: ConstraintSystem<E>, F: PrimeField>(
+    mut cs: CS,
+    value: Option<F>,
+    bit_length: usize,
+) -> Result<Vec<AllocatedBit>, SynthesisError> {
+    assert!(bit_length <= F::NUM_BITS as usize);
+    // Deconstruct in big-endian bit order
+    let values = match value {
+        Some(ref value) => {
+            let mut field_char = BitIterator::new(F::char());
+
+            let mut tmp = Vec::with_capacity(F::NUM_BITS as usize);
+
+            let mut found_one = false;
+            for b in BitIterator::new(value.into_repr()) {
+                // Skip leading bits
+                found_one |= field_char.next().unwrap();
+                if !found_one {
+                    continue;
+                }
+
+                tmp.push(Some(b));
+            }
+
+            assert_eq!(tmp.len(), F::NUM_BITS as usize);
+
+            tmp
+        }
+        None => vec![None; F::NUM_BITS as usize],
+    };
+
+    // Allocate in little-endian order
+    let bits = values
+        .into_iter()
+        .rev()
+        .enumerate()
+        .take(bit_length)
+        .map(|(i, b)| AllocatedBit::alloc(cs.namespace(|| format!("bit {}", i)), b))
+        .collect::<Result<Vec<_>, SynthesisError>>()?;
+
+    Ok(bits)
 }

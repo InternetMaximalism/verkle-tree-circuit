@@ -2,11 +2,13 @@ pub mod utils;
 
 use std::marker::PhantomData;
 
+use franklin_crypto::babyjubjub::JubjubEngine;
 use franklin_crypto::bellman::PrimeField;
 use franklin_crypto::bellman::{Circuit, ConstraintSystem, SynthesisError};
-use franklin_crypto::circuit::ecc::EdwardsPoint;
+use franklin_crypto::circuit::baby_ecc::EdwardsPoint;
 use franklin_crypto::circuit::num::AllocatedNum;
-use franklin_crypto::jubjub::JubjubEngine;
+
+use crate::circuit::ipa_fs::utils::convert_bits_le;
 
 // Compute `H = aG` where `G`, `H` are elliptic curve elements and `a` is an finite field element.
 // `G`, `H` are public variables, while `a` is an private variable.
@@ -15,7 +17,7 @@ use franklin_crypto::jubjub::JubjubEngine;
 pub struct DiscreteLogCircuit<E: JubjubEngine> {
     pub base_point_x: Option<E::Fr>,
     pub base_point_y: Option<E::Fr>,
-    pub coefficient: Option<E::Fr>,
+    pub coefficient: Option<E::Fs>,
     pub jubjub_params: E::Params,
     pub _m: PhantomData<E>,
 }
@@ -37,21 +39,22 @@ impl<E: JubjubEngine> DiscreteLogCircuit<E> {
             &wrapped_base_point_y,
             &self.jubjub_params,
         )?;
-        let wrapped_coefficient = AllocatedNum::alloc(cs.namespace(|| "coefficient"), || {
-            Ok(self.coefficient.unwrap())
-        })?;
+        // let wrapped_coefficient = AllocatedNum::alloc(cs.namespace(|| "coefficient"), || {
+        //     Ok(self.coefficient.unwrap())
+        // })?;
 
-        let wrapped_coefficient_bits = wrapped_coefficient.into_bits_le_fixed(
-            cs.namespace(|| "coefficient_into_bits_le_fixed"),
-            E::Fr::NUM_BITS as usize,
-        )?;
+        // let wrapped_coefficient_bits = wrapped_coefficient.into_bits_le_fixed(
+        //     cs.namespace(|| "coefficient_into_bits_le_fixed"),
+        //     E::Fs::NUM_BITS as usize,
+        // )?;
+        let wrapped_coefficient_bits = convert_bits_le(cs, self.coefficient, None)?;
         let wrapped_output = wrapped_base_point.mul(
             cs.namespace(|| "output"),
             &wrapped_coefficient_bits,
             &self.jubjub_params,
         )?;
-        let wrapped_output =
-            wrapped_output.double(cs.namespace(|| "add_output"), &self.jubjub_params)?;
+        // let wrapped_output =
+        //     wrapped_output.double(cs.namespace(|| "add_output"), &self.jubjub_params)?;
         // let wrapped_output = wrapped_base_point;
 
         println!(

@@ -64,36 +64,40 @@ where
     let mut wrapped_proof_l = Vec::with_capacity(ipa_proof.l.len());
     let mut wrapped_proof_r = Vec::with_capacity(ipa_proof.r.len());
     for (l, r) in ipa_proof.l.iter().zip(&ipa_proof.r) {
-        let raw_l = if let Some(l) = l {
-            let (x, y) = l.into_xy();
-            (Some(x), Some(y))
-        } else {
-            (None, None)
+        let wrapped_l = {
+            let raw_l = if let Some(l) = l {
+                let (x, y) = l.into_xy();
+                (Some(x), Some(y))
+            } else {
+                (None, None)
+            };
+            let l_x = AllocatedNum::alloc(cs.namespace(|| "allocate L_x"), || {
+                raw_l.0.ok_or(SynthesisError::UnconstrainedVariable)
+            })?;
+            let l_y = AllocatedNum::alloc(cs.namespace(|| "allocate L_y"), || {
+                raw_l.1.ok_or(SynthesisError::UnconstrainedVariable)
+            })?;
+
+            EdwardsPoint::interpret(cs.namespace(|| "allocate L"), &l_x, &l_y, jubjub_params)?
         };
-        let l_x = AllocatedNum::alloc(cs.namespace(|| "allocate L_x"), || {
-            raw_l.0.ok_or(SynthesisError::UnconstrainedVariable)
-        })?;
-        let l_y = AllocatedNum::alloc(cs.namespace(|| "allocate L_y"), || {
-            raw_l.1.ok_or(SynthesisError::UnconstrainedVariable)
-        })?;
-        let wrapped_l =
-            EdwardsPoint::interpret(cs.namespace(|| "allocate L"), &l_x, &l_y, jubjub_params)?;
         transcript.commit_point(cs, &wrapped_l)?; // L
 
-        let raw_r = if let Some(r) = r {
-            let (x, y) = r.into_xy();
-            (Some(x), Some(y))
-        } else {
-            (None, None)
+        let wrapped_r = {
+            let raw_r = if let Some(r) = r {
+                let (x, y) = r.into_xy();
+                (Some(x), Some(y))
+            } else {
+                (None, None)
+            };
+            let r_x = AllocatedNum::alloc(cs.namespace(|| "allocate R_x"), || {
+                raw_r.0.ok_or(SynthesisError::UnconstrainedVariable)
+            })?;
+            let r_y = AllocatedNum::alloc(cs.namespace(|| "allocate R_y"), || {
+                raw_r.1.ok_or(SynthesisError::UnconstrainedVariable)
+            })?;
+
+            EdwardsPoint::interpret(cs.namespace(|| "allocate R"), &r_x, &r_y, jubjub_params)?
         };
-        let r_x = AllocatedNum::alloc(cs.namespace(|| "allocate R_x"), || {
-            raw_r.0.ok_or(SynthesisError::UnconstrainedVariable)
-        })?;
-        let r_y = AllocatedNum::alloc(cs.namespace(|| "allocate R_y"), || {
-            raw_r.1.ok_or(SynthesisError::UnconstrainedVariable)
-        })?;
-        let wrapped_r =
-            EdwardsPoint::interpret(cs.namespace(|| "allocate R"), &r_x, &r_y, jubjub_params)?;
         transcript.commit_point(cs, &wrapped_r)?; // R
 
         let c = transcript.get_challenge(cs)?;

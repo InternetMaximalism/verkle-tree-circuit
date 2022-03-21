@@ -2,3 +2,4 @@
 /test_cases/crs
 /test_cases/*/*
 !.gitkeep
+*.profraw

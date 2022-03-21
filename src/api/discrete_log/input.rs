@@ -1,6 +1,9 @@
 use std::{fs::read_to_string, path::Path, str::FromStr};
 
-use franklin_crypto::bellman::pairing::bn256::Fr;
+use franklin_crypto::{
+    babyjubjub::JubjubEngine,
+    bellman::pairing::bn256::{Bn256, Fr},
+};
 // use serde::{Deserialize, Serialize};
 
 use crate::circuit::utils::read_field_element_le_from;
@@ -8,7 +11,7 @@ use crate::circuit::utils::read_field_element_le_from;
 pub struct CircuitInput {
     pub base_point_x: Option<Fr>,
     pub base_point_y: Option<Fr>,
-    pub coefficient: Option<Fr>,
+    pub coefficient: Option<<Bn256 as JubjubEngine>::Fs>,
 }
 
 impl FromStr for CircuitInput {
