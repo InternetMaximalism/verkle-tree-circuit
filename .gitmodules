@@ -1,3 +1,3 @@
 [submodule "packages/verkle-tree"]
 	path = packages/verkle-tree
-	url = git@github.com:intmax-rollup/verkle-tree.git
+	url = git@github.com:InternetMaximalism/verkle-tree.git
