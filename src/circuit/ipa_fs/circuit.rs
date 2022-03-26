@@ -1,4 +1,4 @@
-use std::io::{Error, ErrorKind};
+// use std::io::{Error, ErrorKind};
 
 use franklin_crypto::babyjubjub::{edwards, JubjubEngine, Unknown};
 use franklin_crypto::bellman::{Circuit, ConstraintSystem};
@@ -13,45 +13,49 @@ use crate::circuit::ipa_fs::utils::convert_bits_le;
 
 use super::proof::{generate_challenges, OptionIpaProof};
 use super::transcript::{Transcript, WrappedTranscript};
-use super::utils::{commit, fold_points, fold_scalars};
+use super::utils::{fold_points, fold_scalars};
 
 #[derive(Clone)]
-pub struct IpaCircuit<'a, E: JubjubEngine> {
-    pub transcript_params: E::Fr,
+pub struct IpaCircuit<'a, 'b, 'c, E: JubjubEngine>
+where
+    'c: 'b,
+{
+    pub transcript_params: Option<E::Fr>,
     pub commitment: Option<edwards::Point<E, Unknown>>,
     pub proof: OptionIpaProof<E>,
     pub eval_point: Option<E::Fs>,
     pub inner_prod: Option<E::Fs>,
-    pub ipa_conf: IpaConfig<E>,
+    pub ipa_conf: &'c IpaConfig<'b, E>,
     pub jubjub_params: &'a E::Params,
 }
 
-impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
+impl<'a, 'b, 'c, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, 'b, 'c, E>
+where
+    'c: 'b,
+{
     fn synthesize<CS: ConstraintSystem<E>>(self, cs: &mut CS) -> Result<(), SynthesisError> {
         let transcript_params = self.transcript_params;
         dbg!(transcript_params);
         let wrapped_transcript_params =
             AllocatedNum::<E>::alloc(cs.namespace(|| "alloc transcript_params"), || {
-                Ok(transcript_params)
+                transcript_params.ok_or(SynthesisError::UnconstrainedVariable)
             })?;
         let mut transcript = WrappedTranscript::new(cs, wrapped_transcript_params);
         // transcript.consume("ipa", cs);
 
         // println!("{:?}", self.proof);
-        if self.proof.l.len() != self.proof.r.len() {
-            return Err(
-                Error::new(ErrorKind::InvalidData, "L and R should be the same size").into(),
-            );
-        }
+        assert_eq!(
+            self.proof.l.len(),
+            self.proof.r.len(),
+            "L and R should be the same size"
+        );
 
         let num_ipa_rounds = log2_ceil(self.ipa_conf.get_domain_size());
-        if self.proof.l.len() != num_ipa_rounds {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "The number of points for L or R should be equal to the number of rounds",
-            )
-            .into());
-        }
+        assert_eq!(
+            self.proof.l.len(),
+            num_ipa_rounds,
+            "The number of points for L or R should be equal to the number of rounds"
+        );
 
         let eval_point = self.eval_point;
         let inner_prod = self.inner_prod;
@@ -88,13 +92,11 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
         let mut b =
             compute_barycentric_coefficients(cs, &self.ipa_conf.precomputed_weights, &eval_point)?;
 
-        if b.len() != self.ipa_conf.srs.len() {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "`barycentric_coefficients` had incorrect length",
-            )
-            .into());
-        }
+        assert_eq!(
+            b.len(),
+            self.ipa_conf.srs.len(),
+            "`barycentric_coefficients` had incorrect length"
+        );
 
         transcript.commit_point(cs, &commitment)?;
         transcript.commit_field_element(cs, &eval_point)?;
@@ -235,13 +237,11 @@ impl<'a, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, E> {
 
         println!("x_inv: {}/{}", challenges_inv.len(), challenges_inv.len());
 
-        if b.len() != 1 {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "`b` and `current_basis` should be 1",
-            )
-            .into());
-        }
+        assert_eq!(
+            b.len(),
+            1,
+            "`b` and `current_basis` should have one element by the reduction."
+        );
 
         println!(
             "reduction ends: {} s",

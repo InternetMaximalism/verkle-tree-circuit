@@ -9,28 +9,31 @@ use franklin_crypto::{
         PrimeField, PrimeFieldRepr, SynthesisError,
     },
 };
-use verkle_tree::ipa_fs::{
-    config::{Committer, IpaConfig},
-    proof::IpaProof,
-    utils::log2_ceil,
+use verkle_tree::{
+    batch_proof_fs::BatchProof,
+    ipa_fs::{
+        config::{Committer, IpaConfig},
+        proof::IpaProof,
+        utils::log2_ceil,
+    },
 };
 // use serde::{Deserialize, Serialize};
 
 use crate::circuit::{
-    ipa_fs::{circuit::IpaCircuit, proof::OptionIpaProof},
+    batch_proof_fs::BatchProofCircuit, ipa_fs::proof::OptionIpaProof,
     utils::read_field_element_le_from,
 };
 
 #[derive(Clone)]
-pub struct IpaCircuitInput {
-    pub commitment: edwards::Point<Bn256, Unknown>,
-    pub proof: IpaProof<Bn256>,
-    pub eval_point: <Bn256 as JubjubEngine>::Fs,
-    pub inner_prod: <Bn256 as JubjubEngine>::Fs,
+pub struct BatchProofCircuitInput {
+    pub commitments: Vec<edwards::Point<Bn256, Unknown>>,
+    pub proof: BatchProof<Bn256>,
+    pub ys: Vec<<Bn256 as JubjubEngine>::Fs>,
+    pub zs: Vec<usize>,
 }
 
 #[cfg(test)]
-mod ipa_api_tests {
+mod batch_proof_fs_api_tests {
     use std::{fs::OpenOptions, path::Path};
 
     use franklin_crypto::{
@@ -41,48 +44,52 @@ mod ipa_api_tests {
         },
     };
     use verkle_tree::{
+        batch_proof_fs::BatchProof,
         ipa_fr::utils::test_poly,
         ipa_fs::{
             config::{Committer, IpaConfig},
-            proof::IpaProof,
             transcript::{Bn256Transcript, PoseidonBn256Transcript},
-            utils::read_field_element_le,
         },
     };
 
-    use super::IpaCircuitInput;
+    use super::BatchProofCircuitInput;
 
     const CIRCUIT_NAME: &str = "ipa_fs";
 
     fn make_test_input(
-        poly: &[<Bn256 as JubjubEngine>::Fs],
-        eval_point: <Bn256 as JubjubEngine>::Fs,
+        poly_list: &[Vec<<Bn256 as JubjubEngine>::Fs>],
+        eval_points: &[usize],
         transcript_params: Fr,
         jubjub_params: &JubjubBn256,
         ipa_conf: &IpaConfig<Bn256>,
-    ) -> anyhow::Result<IpaCircuitInput> {
-        let commitment = ipa_conf.commit(&poly).unwrap();
-        let (proof, ip) = IpaProof::<Bn256>::create(
-            commitment.clone(),
-            poly,
-            eval_point,
+    ) -> anyhow::Result<BatchProofCircuitInput> {
+        let commitments = poly_list
+            .iter()
+            .map(|poly| ipa_conf.commit(poly))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        dbg!(commitments.len());
+        let (proof, ys) = BatchProof::<Bn256>::create(
+            &commitments.clone(),
+            poly_list,
+            eval_points,
             transcript_params,
             &ipa_conf,
             jubjub_params,
         )?;
 
-        Ok(IpaCircuitInput {
-            commitment,
+        Ok(BatchProofCircuitInput {
+            commitments,
             proof,
-            eval_point,
-            inner_prod: ip,
+            ys,
+            zs: eval_points.to_vec(),
         })
     }
 
     #[test]
-    fn test_ipa_fs_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_batch_proof_fs_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
         let jubjub_params = &JubjubBn256::new();
-        let eval_point = read_field_element_le(&123456789u64.to_le_bytes()).unwrap();
+        let eval_points = vec![1];
         let domain_size = 2;
         let ipa_conf = &IpaConfig::<Bn256>::new(domain_size, jubjub_params);
 
@@ -98,28 +105,26 @@ mod ipa_api_tests {
         // ])
         // .unwrap();
         let circuit_input = make_test_input(
-            &padded_poly,
-            eval_point,
+            &[padded_poly],
+            &eval_points,
             prover_transcript.clone().into_params(),
             jubjub_params,
-            &ipa_conf,
-        )?;
-
-        let is_ok = circuit_input.proof.check(
-            circuit_input.commitment.clone(),
-            eval_point,
-            circuit_input.inner_prod,
-            prover_transcript.clone().into_params(),
-            &ipa_conf,
-            jubjub_params,
-        )?;
-        assert!(is_ok);
-
-        let (vk, proof) = circuit_input.create_groth16_proof(
-            prover_transcript.into_params(),
             ipa_conf,
-            jubjub_params,
         )?;
+
+        // let is_ok = circuit_input.proof.check(
+        //     circuit_input.commitment.clone(),
+        //     eval_point,
+        //     circuit_input.inner_prod,
+        //     prover_transcript.clone().into_params(),
+        //     &ipa_conf,
+        //     jubjub_params,
+        // )?;
+        // assert!(is_ok);
+
+        let (vk, proof) = circuit_input
+            .create_groth16_proof(prover_transcript.into_params(), ipa_conf, jubjub_params)
+            .unwrap();
         let proof_path = Path::new("./test_cases")
             .join(CIRCUIT_NAME)
             .join("proof_case1");
@@ -148,7 +153,7 @@ mod ipa_api_tests {
     }
 }
 
-impl FromStr for IpaCircuitInput {
+impl FromStr for BatchProofCircuitInput {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> anyhow::Result<Self> {
@@ -156,7 +161,7 @@ impl FromStr for IpaCircuitInput {
     }
 }
 
-impl IpaCircuitInput {
+impl BatchProofCircuitInput {
     pub fn from_path(path: &Path) -> anyhow::Result<Self> {
         let json_str = read_to_string(path)?;
 
@@ -166,18 +171,10 @@ impl IpaCircuitInput {
     pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
         let jubjub_params = &JubjubBn256::new();
         let reader = &mut std::io::Cursor::new(bytes.to_vec());
-        let commitment_x: Fr = read_field_element_le_from(reader)?;
-        let commitment_y: Fr = read_field_element_le_from(reader)?;
-        let commitment = edwards::Point::get_for_y(
-            commitment_y,
-            commitment_x.into_repr().is_odd(),
-            jubjub_params,
-        )
-        .unwrap();
+        let num_rounds = reader.read_u64::<LittleEndian>()?;
 
-        let n = reader.read_u64::<LittleEndian>()?;
         let mut proof_l = vec![];
-        for _ in 0..n {
+        for _ in 0..num_rounds {
             let lix: Fr = read_field_element_le_from(reader)?;
             let liy: Fr = read_field_element_le_from(reader)?;
             let li =
@@ -185,7 +182,7 @@ impl IpaCircuitInput {
             proof_l.push(li);
         }
         let mut proof_r = vec![];
-        for _ in 0..n {
+        for _ in 0..num_rounds {
             let rix: Fr = read_field_element_le_from(reader)?;
             let riy: Fr = read_field_element_le_from(reader)?;
             let ri =
@@ -193,36 +190,67 @@ impl IpaCircuitInput {
             proof_r.push(ri);
         }
         let proof_a: <Bn256 as JubjubEngine>::Fs = read_field_element_le_from(reader)?;
-        let proof = IpaProof {
+        let ipa_proof = IpaProof {
             l: proof_l,
             r: proof_r,
             a: proof_a,
         };
-        let eval_point = read_field_element_le_from(reader)?;
-        let inner_prod = read_field_element_le_from(reader)?;
+        let dx: Fr = read_field_element_le_from(reader)?;
+        let dy: Fr = read_field_element_le_from(reader)?;
+        let d = edwards::Point::get_for_y(dy, dx.into_repr().is_odd(), jubjub_params).unwrap();
+        let proof = BatchProof { ipa: ipa_proof, d };
+
+        let num_commitments = reader.read_u64::<LittleEndian>()?;
+        let mut commitments = vec![];
+        for _ in 0..num_commitments {
+            let commitment_x: Fr = read_field_element_le_from(reader)?;
+            let commitment_y: Fr = read_field_element_le_from(reader)?;
+            let commitment = edwards::Point::get_for_y(
+                commitment_y,
+                commitment_x.into_repr().is_odd(),
+                jubjub_params,
+            )
+            .unwrap();
+            commitments.push(commitment);
+        }
+
+        let mut ys = vec![];
+        for _ in 0..num_commitments {
+            let eval_point = read_field_element_le_from(reader)?;
+            ys.push(eval_point);
+        }
+
+        let z_size_bytes = reader.read_u8()?;
+        assert_eq!(z_size_bytes, 1);
+        let mut zs = vec![];
+        for _ in 0..num_commitments {
+            let inner_prod = reader.read_u8()?;
+            zs.push(inner_prod as usize);
+        }
+
         let input = Self {
-            commitment,
+            commitments,
             proof,
-            eval_point,
-            inner_prod,
+            ys,
+            zs,
         };
 
         Ok(input)
     }
 }
 
-impl IpaCircuitInput {
+impl BatchProofCircuitInput {
     pub fn new(
-        commitment: edwards::Point<Bn256, Unknown>,
-        proof: IpaProof<Bn256>,
-        eval_point: <Bn256 as JubjubEngine>::Fs,
-        inner_prod: <Bn256 as JubjubEngine>::Fs,
+        commitments: Vec<edwards::Point<Bn256, Unknown>>,
+        proof: BatchProof<Bn256>,
+        ys: Vec<<Bn256 as JubjubEngine>::Fs>,
+        zs: Vec<usize>,
     ) -> Self {
         Self {
-            commitment,
+            commitments,
             proof,
-            eval_point,
-            inner_prod,
+            ys,
+            zs,
         }
     }
 
@@ -233,12 +261,13 @@ impl IpaCircuitInput {
         jubjub_params: &JubjubBn256,
     ) -> Result<(VerifyingKey<Bn256>, Proof<Bn256>), SynthesisError> {
         let num_rounds = log2_ceil(ipa_conf.get_domain_size()) as usize;
-        let dummy_circuit = IpaCircuit::<Bn256> {
+        let dummy_circuit = BatchProofCircuit::<Bn256> {
             transcript_params: None,
-            commitment: None,
+            commitments: vec![None; num_rounds],
             proof: OptionIpaProof::with_depth(num_rounds),
-            eval_point: None,
-            inner_prod: None,
+            d: None,
+            ys: vec![None; num_rounds],
+            zs: vec![None; num_rounds],
             ipa_conf,
             jubjub_params,
         };
@@ -259,12 +288,17 @@ impl IpaCircuitInput {
 
         let vk = &setup.vk;
 
-        let circuit = IpaCircuit::<Bn256> {
+        let circuit = BatchProofCircuit::<Bn256> {
             transcript_params: Some(transcript_params),
-            commitment: Some(self.commitment.clone()),
-            proof: OptionIpaProof::from(self.proof.clone()),
-            eval_point: Some(self.eval_point),
-            inner_prod: Some(self.inner_prod),
+            commitments: self
+                .commitments
+                .iter()
+                .map(|ci| Some(ci.clone()))
+                .collect::<Vec<_>>(),
+            proof: OptionIpaProof::from(self.proof.ipa.clone()),
+            d: Some(self.proof.d.clone()),
+            ys: self.ys.iter().map(|&yi| Some(yi)).collect::<Vec<_>>(),
+            zs: self.zs.iter().map(|&zi| Some(zi)).collect::<Vec<_>>(),
             ipa_conf,
             jubjub_params,
         };
@@ -276,7 +310,7 @@ impl IpaCircuitInput {
 
         println!("prove");
 
-        let proof = create_random_proof(circuit, &setup, rng)?;
+        let proof = create_random_proof(circuit, &setup, rng).unwrap();
 
         // assert_eq!(
         //     proof.inputs,

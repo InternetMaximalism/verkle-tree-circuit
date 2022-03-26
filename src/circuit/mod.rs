@@ -18,3 +18,5 @@ pub mod ipa_fs;
 
 /// This is the circuit implementation of the batch proof verification.
 pub mod batch_proof_fr;
+
+pub mod batch_proof_fs;

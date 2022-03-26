@@ -34,6 +34,7 @@ pub trait Transcript<E: JubjubEngine>: Sized + Clone {
         &mut self,
         cs: &mut CS,
     ) -> Result<Option<E::Fs>, SynthesisError>;
+    fn into_params(self) -> AllocatedNum<E>;
 }
 
 #[derive(Clone)]
@@ -88,6 +89,10 @@ where
         let result = convert_fr_to_fs(cs, &self.state).unwrap();
 
         Ok(result)
+    }
+
+    fn into_params(self) -> AllocatedNum<E> {
+        self.state
     }
 }
 

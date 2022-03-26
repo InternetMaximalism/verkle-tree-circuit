@@ -2,9 +2,7 @@ use std::io::{Error, ErrorKind};
 
 use franklin_crypto::babyjubjub::JubjubEngine;
 use franklin_crypto::bellman::pairing::Engine;
-use franklin_crypto::bellman::{
-    BitIterator, ConstraintSystem, Field, LinearCombination, PrimeField, SynthesisError,
-};
+use franklin_crypto::bellman::{BitIterator, ConstraintSystem, Field, PrimeField, SynthesisError};
 use franklin_crypto::circuit::baby_ecc::EdwardsPoint;
 use franklin_crypto::circuit::boolean::{AllocatedBit, Boolean};
 use franklin_crypto::circuit::num::AllocatedNum;

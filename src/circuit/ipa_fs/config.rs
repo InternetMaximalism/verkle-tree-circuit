@@ -1,5 +1,5 @@
 use franklin_crypto::babyjubjub::JubjubEngine;
-use franklin_crypto::bellman::{ConstraintSystem, Field, PrimeField, SynthesisError};
+use franklin_crypto::bellman::{ConstraintSystem, Field, SynthesisError};
 use verkle_tree::ipa_fr::config::PrecomputedWeights;
 use verkle_tree::ipa_fr::utils::read_field_element_le;
 

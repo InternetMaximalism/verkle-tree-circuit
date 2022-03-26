@@ -3,7 +3,6 @@ pub mod utils;
 use std::marker::PhantomData;
 
 use franklin_crypto::babyjubjub::JubjubEngine;
-use franklin_crypto::bellman::PrimeField;
 use franklin_crypto::bellman::{Circuit, ConstraintSystem, SynthesisError};
 use franklin_crypto::circuit::baby_ecc::EdwardsPoint;
 use franklin_crypto::circuit::num::AllocatedNum;
