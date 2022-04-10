@@ -70,7 +70,7 @@ impl<'a, E: Engine, WP: WrappedAffinePoint<'a, E>, AD: AuxData<E>> Circuit<E>
 
         let mut b = compute_barycentric_coefficients::<E, CS>(
             cs,
-            &self.ipa_conf.get_precomputed_weights(),
+            self.ipa_conf.get_precomputed_weights(),
             &eval_point,
         )
         .unwrap();

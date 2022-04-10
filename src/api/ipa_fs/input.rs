@@ -4,16 +4,24 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use franklin_crypto::{
     babyjubjub::{edwards, JubjubBn256, JubjubEngine, Unknown},
     bellman::{
-        groth16::{create_random_proof, generate_random_parameters, Proof, VerifyingKey},
+        kate_commitment::{Crs, CrsForMonomialForm},
         pairing::bn256::{Bn256, Fr},
-        PrimeField, PrimeFieldRepr, SynthesisError,
+        plonk::{
+            better_better_cs::{
+                cs::{Circuit, ProvingAssembly, SetupAssembly, Width4MainGateWithDNext},
+                proof::Proof,
+                setup::VerificationKey,
+            },
+            commitments::transcript::keccak_transcript::RollingKeccakTranscript,
+        },
+        PrimeField, PrimeFieldRepr, ScalarEngine, SynthesisError,
+    },
+    plonk::circuit::{
+        bigint::field::RnsParameters, verifier_circuit::affine_point_wrapper::WrappedAffinePoint,
+        Width4WithCustomGates,
     },
 };
-use verkle_tree::ipa_fs::{
-    config::{Committer, IpaConfig},
-    proof::IpaProof,
-    utils::log2_ceil,
-};
+use verkle_tree::ipa_fs::{config::IpaConfig, proof::IpaProof};
 // use serde::{Deserialize, Serialize};
 
 use crate::circuit::{
@@ -31,13 +39,20 @@ pub struct IpaCircuitInput {
 
 #[cfg(test)]
 mod ipa_api_tests {
-    use std::{fs::OpenOptions, path::Path};
+    use std::{
+        fs::{File, OpenOptions},
+        path::Path,
+    };
 
     use franklin_crypto::{
         babyjubjub::{JubjubBn256, JubjubEngine},
         bellman::{
-            groth16::{prepare_verifying_key, verify_proof},
+            kate_commitment::{Crs, CrsForMonomialForm},
             pairing::bn256::{Bn256, Fr},
+        },
+        plonk::circuit::{
+            bigint::field::RnsParameters,
+            verifier_circuit::affine_point_wrapper::without_flag_unchecked::WrapperUnchecked,
         },
     };
     use verkle_tree::{
@@ -79,10 +94,96 @@ mod ipa_api_tests {
         })
     }
 
+    // #[test]
+    // fn test_ipa_fs_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
+    //     let jubjub_params = &JubjubBn256::new();
+    //     let eval_point = read_field_element_le(&123456789u64.to_le_bytes()).unwrap();
+    //     let domain_size = 2;
+    //     let ipa_conf = &IpaConfig::<Bn256>::new(domain_size, jubjub_params);
+
+    //     // Prover view
+    //     let poly = vec![12, 97];
+    //     // let poly = vec![12, 97, 37, 0, 1, 208, 132, 3];
+    //     let padded_poly = test_poly::<<Bn256 as JubjubEngine>::Fs>(&poly, domain_size);
+    //     let prover_transcript = PoseidonBn256Transcript::with_bytes(b"ipa");
+
+    //     // let output = read_field_element_le_from::<Fr>(&[
+    //     //   251, 230, 185, 64, 12, 136, 124, 164, 37, 71, 120, 65, 234, 225, 30, 7, 157, 148, 169, 225,
+    //     //   186, 183, 76, 63, 231, 241, 40, 189, 50, 55, 145, 23,
+    //     // ])
+    //     // .unwrap();
+    //     let rns_params =
+    //         &RnsParameters::<Bn256, <Bn256 as JubjubEngine>::Fs>::new_for_field(68, 110, 4);
+    //     let circuit_input = make_test_input(
+    //         &padded_poly,
+    //         eval_point,
+    //         prover_transcript.clone().into_params(),
+    //         jubjub_params,
+    //         &ipa_conf,
+    //     )?;
+
+    //     let is_ok = circuit_input.proof.check(
+    //         circuit_input.commitment.clone(),
+    //         eval_point,
+    //         circuit_input.inner_prod,
+    //         prover_transcript.clone().into_params(),
+    //         &ipa_conf,
+    //         jubjub_params,
+    //     )?;
+    //     assert!(is_ok);
+
+    //     let (vk, proof) = circuit_input.create_groth16_proof(
+    //         prover_transcript.into_params(),
+    //         ipa_conf,
+    //         jubjub_params,
+    //         rns_params,
+    //     )?;
+    //     let proof_path = Path::new("./test_cases")
+    //         .join(CIRCUIT_NAME)
+    //         .join("proof_case1");
+    //     let file = OpenOptions::new()
+    //         .write(true)
+    //         .create(true)
+    //         .truncate(true)
+    //         .open(proof_path)?;
+    //     proof.write(file)?;
+    //     let vk_path = Path::new("./test_cases")
+    //         .join(CIRCUIT_NAME)
+    //         .join("vk_case1");
+    //     let file = OpenOptions::new()
+    //         .write(true)
+    //         .create(true)
+    //         .truncate(true)
+    //         .open(vk_path)?;
+    //     vk.write(file)?;
+
+    //     let public_input = vec![]; // TODO
+    //     let prepared_vk = prepare_verifying_key(&vk);
+    //     let success = verify_proof(&prepared_vk, &proof, &public_input)?;
+    //     assert!(success, "verification error");
+
+    //     Ok(())
+    // }
+
+    fn open_crs_for_log2_of_size(_log2_n: usize) -> Crs<Bn256, CrsForMonomialForm> {
+        let full_path = Path::new("./test_cases").join("crs");
+        println!("Opening {}", full_path.to_string_lossy());
+        let file = File::open(&full_path).unwrap();
+        let reader = std::io::BufReader::with_capacity(1 << 24, file);
+        let crs = Crs::<Bn256, CrsForMonomialForm>::read(reader).unwrap();
+        println!("Load {}", full_path.to_string_lossy());
+
+        crs
+    }
+
     #[test]
     fn test_ipa_fs_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
+        let crs = open_crs_for_log2_of_size(23);
         let jubjub_params = &JubjubBn256::new();
-        let eval_point = read_field_element_le(&123456789u64.to_le_bytes()).unwrap();
+        let rns_params =
+            &RnsParameters::<Bn256, <Bn256 as JubjubEngine>::Fs>::new_for_field(68, 110, 4);
+        let eval_point: <Bn256 as JubjubEngine>::Fs =
+            read_field_element_le(&123456789u64.to_le_bytes()).unwrap();
         let domain_size = 2;
         let ipa_conf = &IpaConfig::<Bn256>::new(domain_size, jubjub_params);
 
@@ -102,23 +203,15 @@ mod ipa_api_tests {
             eval_point,
             prover_transcript.clone().into_params(),
             jubjub_params,
-            &ipa_conf,
+            ipa_conf,
         )?;
 
-        let is_ok = circuit_input.proof.check(
-            circuit_input.commitment.clone(),
-            eval_point,
-            circuit_input.inner_prod,
-            prover_transcript.clone().into_params(),
-            &ipa_conf,
-            jubjub_params,
-        )?;
-        assert!(is_ok);
-
-        let (vk, proof) = circuit_input.create_groth16_proof(
+        let (vk, proof) = circuit_input.create_plonk_proof::<WrapperUnchecked<'_, Bn256>>(
             prover_transcript.into_params(),
             ipa_conf,
             jubjub_params,
+            rns_params,
+            crs,
         )?;
         let proof_path = Path::new("./test_cases")
             .join(CIRCUIT_NAME)
@@ -138,11 +231,6 @@ mod ipa_api_tests {
             .truncate(true)
             .open(vk_path)?;
         vk.write(file)?;
-
-        let public_input = vec![]; // TODO
-        let prepared_vk = prepare_verifying_key(&vk);
-        let success = verify_proof(&prepared_vk, &proof, &public_input)?;
-        assert!(success, "verification error");
 
         Ok(())
     }
@@ -226,38 +314,116 @@ impl IpaCircuitInput {
         }
     }
 
-    pub fn create_groth16_proof(
+    // pub fn create_groth16_proof(
+    //     &self,
+    //     transcript_params: Fr,
+    //     ipa_conf: &IpaConfig<Bn256>,
+    //     jubjub_params: &JubjubBn256,
+    //     rns_params: &RnsParameters<Bn256, <Bn256 as JubjubEngine>::Fs>,
+    // ) -> Result<(VerifyingKey<Bn256>, Proof<Bn256>), SynthesisError> {
+    //     let num_rounds = log2_ceil(ipa_conf.get_domain_size()) as usize;
+    //     let dummy_circuit = IpaCircuit::<Bn256> {
+    //         transcript_params: None,
+    //         commitment: None,
+    //         proof: OptionIpaProof::with_depth(num_rounds),
+    //         eval_point: None,
+    //         inner_prod: None,
+    //         ipa_conf,
+    //         jubjub_params,
+    //         rns_params,
+    //     };
+
+    //     // let mut dummy_assembly =
+    //     //     SetupAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
+    //     // dummy_circuit
+    //     //     .synthesize(&mut dummy_assembly)
+    //     //     .expect("must synthesize");
+    //     // dummy_assembly.finalize();
+
+    //     // println!("Checking if satisfied");
+    //     // let is_satisfied = dummy_assembly.is_satisfied();
+    //     // assert!(is_satisfied, "unsatisfied constraints");
+
+    //     let rng = &mut rand::thread_rng();
+    //     let setup = generate_random_parameters::<Bn256, _, _>(dummy_circuit, rng)?;
+
+    //     let vk = &setup.vk;
+
+    //     let circuit = IpaCircuit::<Bn256> {
+    //         transcript_params: Some(transcript_params),
+    //         commitment: Some(self.commitment.clone()),
+    //         proof: OptionIpaProof::from(self.proof.clone()),
+    //         eval_point: Some(self.eval_point),
+    //         inner_prod: Some(self.inner_prod),
+    //         ipa_conf,
+    //         jubjub_params,
+    //         rns_params,
+    //     };
+
+    //     // let mut assembly =
+    //     //     ProvingAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
+    //     // circuit.synthesize(&mut assembly).expect("must synthesize");
+    //     // assembly.finalize();
+
+    //     println!("prove");
+
+    //     let proof = create_random_proof(circuit, &setup, rng)?;
+
+    //     // assert_eq!(
+    //     //     proof.inputs,
+    //     //     vec![self.output],
+    //     //     "expected input is not equal to one in a circuit"
+    //     // );
+
+    //     // let prepared_vk = prepare_verifying_key(&setup.vk);
+    //     // let success = verify_proof(&prepared_vk, &proof, &public_input)?;
+    //     // if !success {
+    //     //     return Err(Error::new(ErrorKind::InvalidData, "verification error").into());
+    //     // }
+
+    //     Ok((vk.clone(), proof))
+    // }
+
+    pub fn create_plonk_proof<'a, WP: WrappedAffinePoint<'a, Bn256>>(
         &self,
         transcript_params: Fr,
         ipa_conf: &IpaConfig<Bn256>,
         jubjub_params: &JubjubBn256,
-    ) -> Result<(VerifyingKey<Bn256>, Proof<Bn256>), SynthesisError> {
-        let num_rounds = log2_ceil(ipa_conf.get_domain_size()) as usize;
+        rns_params: &'a RnsParameters<Bn256, <Bn256 as JubjubEngine>::Fs>,
+        crs: Crs<Bn256, CrsForMonomialForm>,
+    ) -> Result<
+        (
+            VerificationKey<Bn256, IpaCircuit<Bn256>>,
+            Proof<Bn256, IpaCircuit<Bn256>>,
+        ),
+        SynthesisError,
+    > {
         let dummy_circuit = IpaCircuit::<Bn256> {
             transcript_params: None,
             commitment: None,
-            proof: OptionIpaProof::with_depth(num_rounds),
+            proof: OptionIpaProof::from(self.proof.clone()),
             eval_point: None,
             inner_prod: None,
             ipa_conf,
             jubjub_params,
+            rns_params,
         };
 
-        // let mut dummy_assembly =
-        //     SetupAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
-        // dummy_circuit
-        //     .synthesize(&mut dummy_assembly)
-        //     .expect("must synthesize");
-        // dummy_assembly.finalize();
+        let mut dummy_assembly =
+            SetupAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
+        dummy_circuit
+            .synthesize(&mut dummy_assembly)
+            .expect("must synthesize");
+        dummy_assembly.finalize();
 
         // println!("Checking if satisfied");
         // let is_satisfied = dummy_assembly.is_satisfied();
         // assert!(is_satisfied, "unsatisfied constraints");
 
-        let rng = &mut rand::thread_rng();
-        let setup = generate_random_parameters::<Bn256, _, _>(dummy_circuit, rng)?;
+        let worker = franklin_crypto::bellman::worker::Worker::new();
+        let setup = dummy_assembly.create_setup::<IpaCircuit<Bn256>>(&worker)?;
 
-        let vk = &setup.vk;
+        let vk = VerificationKey::<Bn256, IpaCircuit<Bn256>>::from_setup(&setup, &worker, &crs)?;
 
         let circuit = IpaCircuit::<Bn256> {
             transcript_params: Some(transcript_params),
@@ -267,16 +433,20 @@ impl IpaCircuitInput {
             inner_prod: Some(self.inner_prod),
             ipa_conf,
             jubjub_params,
+            rns_params,
         };
 
-        // let mut assembly =
-        //     ProvingAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
-        // circuit.synthesize(&mut assembly).expect("must synthesize");
-        // assembly.finalize();
+        let mut assembly =
+            ProvingAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
+        circuit.synthesize(&mut assembly).expect("must synthesize");
+        assembly.finalize();
 
         println!("prove");
 
-        let proof = create_random_proof(circuit, &setup, rng)?;
+        let proof = assembly
+            .create_proof::<IpaCircuit<Bn256>, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(
+                &worker, &setup, &crs, None,
+            )?;
 
         // assert_eq!(
         //     proof.inputs,
@@ -284,12 +454,8 @@ impl IpaCircuitInput {
         //     "expected input is not equal to one in a circuit"
         // );
 
-        // let prepared_vk = prepare_verifying_key(&setup.vk);
-        // let success = verify_proof(&prepared_vk, &proof, &public_input)?;
-        // if !success {
-        //     return Err(Error::new(ErrorKind::InvalidData, "verification error").into());
-        // }
+        let result = (vk, proof);
 
-        Ok((vk.clone(), proof))
+        Ok(result)
     }
 }

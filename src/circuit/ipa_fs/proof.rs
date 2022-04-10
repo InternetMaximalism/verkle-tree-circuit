@@ -1,8 +1,11 @@
 use franklin_crypto::babyjubjub::{edwards, JubjubEngine, Unknown};
-use franklin_crypto::bellman::{ConstraintSystem, SynthesisError};
-use franklin_crypto::circuit::baby_ecc::EdwardsPoint;
-use franklin_crypto::circuit::num::AllocatedNum;
+use franklin_crypto::bellman::plonk::better_better_cs::cs::ConstraintSystem;
+use franklin_crypto::bellman::SynthesisError;
+use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
+use franklin_crypto::plonk::circuit::bigint::field::{FieldElement, RnsParameters};
 use verkle_tree::ipa_fs::proof::IpaProof;
+
+use crate::circuit::num::baby_ecc::EdwardsPoint;
 
 use super::transcript::Transcript;
 
@@ -48,14 +51,14 @@ impl<E: JubjubEngine> From<IpaProof<E>> for OptionIpaProof<E> {
     }
 }
 
-pub fn generate_challenges<'a, 'b, E, CS, T>(
+pub fn generate_challenges<'a, E, CS, T>(
     cs: &mut CS,
     ipa_proof: &OptionIpaProof<E>,
     transcript: &mut T,
     jubjub_params: &E::Params,
-) -> Result<(Vec<Option<E::Fs>>, WrappedIpaProof<E>), SynthesisError>
+    rns_params: &'a RnsParameters<E, E::Fs>,
+) -> Result<(Vec<FieldElement<'a, E, E::Fs>>, WrappedIpaProof<E>), SynthesisError>
 where
-    'b: 'a,
     E: JubjubEngine,
     CS: ConstraintSystem<E>,
     T: Transcript<E>,
@@ -71,14 +74,12 @@ where
             } else {
                 (None, None)
             };
-            let l_x = AllocatedNum::alloc(cs.namespace(|| "allocate L_x"), || {
-                raw_l.0.ok_or(SynthesisError::UnconstrainedVariable)
-            })?;
-            let l_y = AllocatedNum::alloc(cs.namespace(|| "allocate L_y"), || {
-                raw_l.1.ok_or(SynthesisError::UnconstrainedVariable)
-            })?;
+            let l_x =
+                AllocatedNum::alloc(cs, || raw_l.0.ok_or(SynthesisError::UnconstrainedVariable))?;
+            let l_y =
+                AllocatedNum::alloc(cs, || raw_l.1.ok_or(SynthesisError::UnconstrainedVariable))?;
 
-            EdwardsPoint::interpret(cs.namespace(|| "allocate L"), &l_x, &l_y, jubjub_params)?
+            EdwardsPoint::interpret(cs, &l_x, &l_y, jubjub_params)?
         };
         transcript.commit_point(cs, &wrapped_l)?; // L
 
@@ -89,18 +90,16 @@ where
             } else {
                 (None, None)
             };
-            let r_x = AllocatedNum::alloc(cs.namespace(|| "allocate R_x"), || {
-                raw_r.0.ok_or(SynthesisError::UnconstrainedVariable)
-            })?;
-            let r_y = AllocatedNum::alloc(cs.namespace(|| "allocate R_y"), || {
-                raw_r.1.ok_or(SynthesisError::UnconstrainedVariable)
-            })?;
+            let r_x =
+                AllocatedNum::alloc(cs, || raw_r.0.ok_or(SynthesisError::UnconstrainedVariable))?;
+            let r_y =
+                AllocatedNum::alloc(cs, || raw_r.1.ok_or(SynthesisError::UnconstrainedVariable))?;
 
-            EdwardsPoint::interpret(cs.namespace(|| "allocate R"), &r_x, &r_y, jubjub_params)?
+            EdwardsPoint::interpret(cs, &r_x, &r_y, jubjub_params)?
         };
         transcript.commit_point(cs, &wrapped_r)?; // R
 
-        let c = transcript.get_challenge(cs)?;
+        let c = transcript.get_challenge(cs, rns_params)?;
         challenges.push(c);
         wrapped_proof_l.push(wrapped_l);
         wrapped_proof_r.push(wrapped_r);

@@ -1,11 +1,13 @@
 use franklin_crypto::babyjubjub::JubjubEngine;
-use franklin_crypto::bellman::{ConstraintSystem, SynthesisError};
-use franklin_crypto::circuit::baby_ecc::EdwardsPoint;
-use franklin_crypto::circuit::num::AllocatedNum;
+use franklin_crypto::bellman::plonk::better_better_cs::cs::ConstraintSystem;
+use franklin_crypto::bellman::SynthesisError;
+use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
+use franklin_crypto::plonk::circuit::bigint::field::{FieldElement, RnsParameters};
 use verkle_tree::ff_utils::bn256_fs::Bn256Fs;
 use verkle_tree::ipa_fr::utils::{read_field_element_le, write_field_element_le};
 use verkle_tree::ipa_fs::transcript::{from_bytes_le, to_bytes_le};
 
+use crate::circuit::num::baby_ecc::EdwardsPoint;
 use crate::circuit::poseidon_fs::calc_poseidon;
 
 use super::utils::{convert_fr_to_fs, convert_fs_to_fr};
@@ -20,20 +22,21 @@ pub fn convert_ff_ce_to_ff<E: JubjubEngine>(value: E::Fs) -> anyhow::Result<Bn25
 
 pub trait Transcript<E: JubjubEngine>: Sized + Clone {
     fn new<CS: ConstraintSystem<E>>(cs: &mut CS, init_state: AllocatedNum<E>) -> Self;
-    fn commit_field_element<CS: ConstraintSystem<E>>(
+    fn commit_field_element<'a, CS: ConstraintSystem<E>>(
         &mut self,
         cs: &mut CS,
-        element: &Option<E::Fs>,
+        element: &FieldElement<'a, E, E::Fs>,
     ) -> Result<(), SynthesisError>;
     fn commit_point<CS: ConstraintSystem<E>>(
         &mut self,
         cs: &mut CS,
         point: &EdwardsPoint<E>,
     ) -> Result<(), SynthesisError>;
-    fn get_challenge<CS: ConstraintSystem<E>>(
+    fn get_challenge<'a, CS: ConstraintSystem<E>>(
         &mut self,
         cs: &mut CS,
-    ) -> Result<Option<E::Fs>, SynthesisError>;
+        rns_params: &'a RnsParameters<E, E::Fs>,
+    ) -> Result<FieldElement<'a, E, E::Fs>, SynthesisError>;
     fn into_params(self) -> AllocatedNum<E>;
 }
 
@@ -53,13 +56,15 @@ where
         Self { state: init_state }
     }
 
-    fn commit_field_element<CS: ConstraintSystem<E>>(
+    fn commit_field_element<'a, CS: ConstraintSystem<E>>(
         &mut self,
         cs: &mut CS,
-        element: &Option<E::Fs>,
+        element: &FieldElement<'a, E, E::Fs>,
     ) -> Result<(), SynthesisError> {
-        let element_fr = element.map(|e| convert_fs_to_fr::<E>(&e).unwrap());
-        let wrapped_element = AllocatedNum::<E>::alloc(cs.namespace(|| ""), || {
+        let element_fr = element
+            .get_field_value()
+            .map(|e| convert_fs_to_fr::<E>(&e).unwrap());
+        let wrapped_element = AllocatedNum::<E>::alloc(cs, || {
             element_fr.ok_or(SynthesisError::UnconstrainedVariable)
         })?;
         self.commit_alloc_num(cs, &wrapped_element)?;
@@ -82,13 +87,15 @@ where
         Ok(())
     }
 
-    fn get_challenge<CS: ConstraintSystem<E>>(
+    fn get_challenge<'a, CS: ConstraintSystem<E>>(
         &mut self,
         cs: &mut CS,
-    ) -> Result<Option<E::Fs>, SynthesisError> {
+        rns_params: &'a RnsParameters<E, E::Fs>,
+    ) -> Result<FieldElement<'a, E, E::Fs>, SynthesisError> {
         let result = convert_fr_to_fs(cs, &self.state).unwrap();
+        let wrapped_result = FieldElement::new_allocated_in_field(cs, result, rns_params)?;
 
-        Ok(result)
+        Ok(wrapped_result)
     }
 
     fn into_params(self) -> AllocatedNum<E> {
@@ -106,7 +113,7 @@ where
         cs: &mut CS,
         element: &AllocatedNum<E>,
     ) -> Result<(), SynthesisError> {
-        let inputs = vec![self.state.clone(), element.clone()];
+        let inputs = vec![self.state.clone(), *element];
         self.state = calc_poseidon::<E, CS>(cs, &inputs)?;
 
         Ok(())

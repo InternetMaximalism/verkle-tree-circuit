@@ -2,29 +2,32 @@ use std::io::{Error, ErrorKind};
 use std::marker::PhantomData;
 use std::path::Path;
 
-use franklin_crypto::babyjubjub::{edwards, JubjubBn256, Unknown};
+use franklin_crypto::babyjubjub::{edwards, JubjubBn256, JubjubEngine, Unknown};
 use franklin_crypto::bellman::groth16::{
     create_random_proof, generate_random_parameters, prepare_verifying_key, verify_proof,
 };
 use franklin_crypto::bellman::pairing::bn256::Bn256;
 use franklin_crypto::bellman::{PrimeField, PrimeFieldRepr};
+use franklin_crypto::plonk::circuit::bigint::field::RnsParameters;
 use rand;
 
 use crate::circuit::discrete_log::DiscreteLogCircuit;
 
-use super::input::CircuitInput;
+use super::input::DiscreteLogCircuitInput;
 
-pub fn run(circuit_input: CircuitInput) -> anyhow::Result<()> {
+pub fn run(circuit_input: DiscreteLogCircuitInput) -> anyhow::Result<()> {
     // setup
     println!("setup");
-    let dummy_jubjub_params = JubjubBn256::new();
-    let dummy_input = CircuitInput::default();
+    let rns_params =
+        &RnsParameters::<Bn256, <Bn256 as JubjubEngine>::Fs>::new_for_field(68, 110, 4);
+    let dummy_jubjub_params = &JubjubBn256::new();
+    let dummy_input = DiscreteLogCircuitInput::default();
     let dummy_circuit = DiscreteLogCircuit::<Bn256> {
         base_point_x: dummy_input.base_point_x,
         base_point_y: dummy_input.base_point_y,
         coefficient: dummy_input.coefficient,
+        rns_params,
         jubjub_params: dummy_jubjub_params,
-        _m: PhantomData,
     };
 
     println!("create_setup");
@@ -38,8 +41,8 @@ pub fn run(circuit_input: CircuitInput) -> anyhow::Result<()> {
         base_point_x: circuit_input.base_point_x,
         base_point_y: circuit_input.base_point_y,
         coefficient: circuit_input.coefficient,
+        rns_params,
         jubjub_params,
-        _m: PhantomData,
     };
 
     println!("create_proof");

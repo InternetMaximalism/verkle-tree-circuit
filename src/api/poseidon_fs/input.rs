@@ -1,7 +1,21 @@
-use franklin_crypto::bellman::{
-    groth16::{create_random_proof, generate_random_parameters, Proof, VerifyingKey},
-    pairing::bn256::{Bn256, Fr},
-    SynthesisError,
+use franklin_crypto::{
+    bellman::{
+        kate_commitment::{Crs, CrsForMonomialForm},
+        pairing::bn256::{Bn256, Fr},
+        plonk::{
+            better_better_cs::{
+                cs::{
+                    Circuit, ProvingAssembly, SetupAssembly, TrivialAssembly,
+                    Width4MainGateWithDNext,
+                },
+                proof::Proof,
+                setup::VerificationKey,
+            },
+            commitments::transcript::keccak_transcript::RollingKeccakTranscript,
+        },
+        ScalarEngine, SynthesisError,
+    },
+    plonk::circuit::Width4WithCustomGates,
 };
 use generic_array::{typenum::*, ArrayLength, GenericArray};
 // use serde::{Deserialize, Serialize};
@@ -20,11 +34,19 @@ where
 
 #[cfg(test)]
 mod poseidon_fs_api_tests {
-    use std::{fs::OpenOptions, path::Path};
+    use std::{
+        fs::{File, OpenOptions},
+        path::Path,
+    };
 
     use franklin_crypto::bellman::{
-        groth16::{prepare_verifying_key, verify_proof},
+        bn256::Bn256,
+        kate_commitment::{Crs, CrsForMonomialForm},
         pairing::bn256::Fr,
+        plonk::{
+            better_better_cs::verifier::verify,
+            commitments::transcript::keccak_transcript::RollingKeccakTranscript,
+        },
     };
     use generic_array::typenum;
     use verkle_tree::ff_utils::bn256_fr::Bn256Fr;
@@ -55,16 +77,73 @@ mod poseidon_fs_api_tests {
         }
     }
 
+    // #[test]
+    // fn test_poseidon_fs_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
+    //     let input1 = read_field_element_le::<Fr>(&[1]).unwrap();
+    //     let input2 = read_field_element_le::<Fr>(&[2]).unwrap();
+    //     let inputs = vec![input1, input2];
+
+    //     // Prover's view
+    //     let circuit_input = make_test_input(inputs);
+
+    //     let (vk, proof) = circuit_input.create_groth16_proof()?;
+
+    //     let proof_path = Path::new("./test_cases")
+    //         .join(CIRCUIT_NAME)
+    //         .join("proof_case1");
+    //     let file = OpenOptions::new()
+    //         .write(true)
+    //         .create(true)
+    //         .truncate(true)
+    //         .open(proof_path)?;
+    //     proof.write(file)?;
+    //     let vk_path = Path::new("./test_cases")
+    //         .join(CIRCUIT_NAME)
+    //         .join("vk_case1");
+    //     let file = OpenOptions::new()
+    //         .write(true)
+    //         .create(true)
+    //         .truncate(true)
+    //         .open(vk_path)?;
+    //     vk.write(file)?;
+
+    //     // Verifier's view
+    //     let public_input = vec![circuit_input.output];
+    //     let prepared_vk = prepare_verifying_key(&vk);
+    //     let success = verify_proof(&prepared_vk, &proof, &public_input)?;
+    //     assert!(success, "verification error");
+
+    //     Ok(())
+    // }
+
+    fn open_crs_for_log2_of_size(_log2_n: usize) -> Crs<Bn256, CrsForMonomialForm> {
+        let full_path = Path::new("./test_cases").join("crs");
+        println!("Opening {}", full_path.to_string_lossy());
+        let file = File::open(&full_path).unwrap();
+        let reader = std::io::BufReader::with_capacity(1 << 24, file);
+        let crs = Crs::<Bn256, CrsForMonomialForm>::read(reader).unwrap();
+        println!("Load {}", full_path.to_string_lossy());
+
+        crs
+    }
+
     #[test]
-    fn test_poseidon_fs_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_fs_poseidon_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
+        // let crs = plonkit::plonk::gen_key_monomial_form(power)?;
+        let crs = open_crs_for_log2_of_size(12);
         let input1 = read_field_element_le::<Fr>(&[1]).unwrap();
         let input2 = read_field_element_le::<Fr>(&[2]).unwrap();
         let inputs = vec![input1, input2];
-
-        // Prover's view
+        // let output = read_field_element_le::<Fr>(&[
+        //   251, 230, 185, 64, 12, 136, 124, 164, 37, 71, 120, 65, 234, 225, 30, 7, 157, 148, 169, 225,
+        //   186, 183, 76, 63, 231, 241, 40, 189, 50, 55, 145, 23,
+        // ])
+        // .unwrap();
         let circuit_input = make_test_input(inputs);
-
-        let (vk, proof) = circuit_input.create_groth16_proof()?;
+        let (vk, proof) = circuit_input.create_plonk_proof(crs)?;
+        let is_valid = verify::<_, _, RollingKeccakTranscript<Fr>>(&vk, &proof, None)
+            .expect("must perform verification");
+        assert!(is_valid);
 
         let proof_path = Path::new("./test_cases")
             .join(CIRCUIT_NAME)
@@ -84,12 +163,6 @@ mod poseidon_fs_api_tests {
             .truncate(true)
             .open(vk_path)?;
         vk.write(file)?;
-
-        // Verifier's view
-        let public_input = vec![circuit_input.output];
-        let prepared_vk = prepare_verifying_key(&vk);
-        let success = verify_proof(&prepared_vk, &proof, &public_input)?;
-        assert!(success, "verification error");
 
         Ok(())
     }
@@ -169,9 +242,78 @@ impl<N: ArrayLength<Option<Fr>>> PoseidonCircuitInput<N> {
         }
     }
 
-    pub fn create_groth16_proof(
+    // pub fn create_groth16_proof(
+    //     &self,
+    // ) -> Result<(VerifyingKey<Bn256>, Proof<Bn256>), SynthesisError> {
+    //     let dummy_inputs = self
+    //         .inputs
+    //         .iter()
+    //         .map(|&_| None)
+    //         .collect::<GenericArray<_, _>>();
+    //     let dummy_circuit = PoseidonCircuit::<Bn256> {
+    //         inputs: dummy_inputs,
+    //         output: None,
+    //     };
+
+    //     // let mut dummy_assembly =
+    //     //     SetupAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
+    //     // dummy_circuit
+    //     //     .synthesize(&mut dummy_assembly)
+    //     //     .expect("must synthesize");
+    //     // dummy_assembly.finalize();
+
+    //     // println!("Checking if satisfied");
+    //     // let is_satisfied = dummy_assembly.is_satisfied();
+    //     // assert!(is_satisfied, "unsatisfied constraints");
+
+    //     let rng = &mut rand::thread_rng();
+    //     let setup = generate_random_parameters::<Bn256, _, _>(dummy_circuit, rng)?;
+
+    //     let vk = &setup.vk;
+
+    //     let circuit = PoseidonCircuit::<Bn256> {
+    //         inputs: self
+    //             .inputs
+    //             .iter()
+    //             .map(|&x| Some(x))
+    //             .collect::<GenericArray<_, _>>(),
+    //         output: Some(self.output),
+    //     };
+
+    //     // let mut assembly =
+    //     //     ProvingAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
+    //     // circuit.synthesize(&mut assembly).expect("must synthesize");
+    //     // assembly.finalize();
+
+    //     println!("prove");
+
+    //     let proof = create_random_proof(circuit, &setup, rng)?;
+
+    //     // assert_eq!(
+    //     //     proof.inputs,
+    //     //     vec![self.output],
+    //     //     "expected input is not equal to one in a circuit"
+    //     // );
+
+    //     // let prepared_vk = prepare_verifying_key(&setup.vk);
+    //     // let success = verify_proof(&prepared_vk, &proof, &public_input)?;
+    //     // if !success {
+    //     //     return Err(Error::new(ErrorKind::InvalidData, "verification error").into());
+    //     // }
+
+    //     Ok((vk.clone(), proof))
+    // }
+
+    pub fn create_plonk_proof(
         &self,
-    ) -> Result<(VerifyingKey<Bn256>, Proof<Bn256>), SynthesisError> {
+        crs: Crs<Bn256, CrsForMonomialForm>,
+    ) -> Result<
+        (
+            VerificationKey<Bn256, PoseidonCircuit<Bn256>>,
+            Proof<Bn256, PoseidonCircuit<Bn256>>,
+        ),
+        SynthesisError,
+    > {
         let dummy_inputs = self
             .inputs
             .iter()
@@ -182,22 +324,6 @@ impl<N: ArrayLength<Option<Fr>>> PoseidonCircuitInput<N> {
             output: None,
         };
 
-        // let mut dummy_assembly =
-        //     SetupAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
-        // dummy_circuit
-        //     .synthesize(&mut dummy_assembly)
-        //     .expect("must synthesize");
-        // dummy_assembly.finalize();
-
-        // println!("Checking if satisfied");
-        // let is_satisfied = dummy_assembly.is_satisfied();
-        // assert!(is_satisfied, "unsatisfied constraints");
-
-        let rng = &mut rand::thread_rng();
-        let setup = generate_random_parameters::<Bn256, _, _>(dummy_circuit, rng)?;
-
-        let vk = &setup.vk;
-
         let circuit = PoseidonCircuit::<Bn256> {
             inputs: self
                 .inputs
@@ -207,27 +333,50 @@ impl<N: ArrayLength<Option<Fr>>> PoseidonCircuitInput<N> {
             output: Some(self.output),
         };
 
-        // let mut assembly =
-        //     ProvingAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
-        // circuit.synthesize(&mut assembly).expect("must synthesize");
-        // assembly.finalize();
+        let mut dummy_assembly =
+            SetupAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
+        dummy_circuit
+            .synthesize(&mut dummy_assembly)
+            .expect("must synthesize");
+        dummy_assembly.finalize();
+
+        let worker = franklin_crypto::bellman::worker::Worker::new();
+        let setup = dummy_assembly.create_setup::<PoseidonCircuit<Bn256>>(&worker)?;
+
+        let vk =
+            VerificationKey::<Bn256, PoseidonCircuit<Bn256>>::from_setup(&setup, &worker, &crs)?;
+
+        println!("Checking if satisfied");
+        let mut trivial_assembly =
+            TrivialAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
+        circuit
+            .synthesize(&mut trivial_assembly)
+            .expect("must synthesize");
+        if !trivial_assembly.is_satisfied() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
 
         println!("prove");
 
-        let proof = create_random_proof(circuit, &setup, rng)?;
+        let mut assembly =
+            ProvingAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
+        circuit.synthesize(&mut assembly).expect("must synthesize");
+        assembly.finalize();
 
-        // assert_eq!(
-        //     proof.inputs,
-        //     vec![self.output],
-        //     "expected input is not equal to one in a circuit"
-        // );
+        // TODO: Is this correct?
+        let proof = assembly
+    .create_proof::<PoseidonCircuit<Bn256>, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(
+      &worker, &setup, &crs, None,
+    )?;
 
-        // let prepared_vk = prepare_verifying_key(&setup.vk);
-        // let success = verify_proof(&prepared_vk, &proof, &public_input)?;
-        // if !success {
-        //     return Err(Error::new(ErrorKind::InvalidData, "verification error").into());
-        // }
+        assert_eq!(
+            proof.inputs,
+            vec![self.output],
+            "expected input is not equal to one in a circuit"
+        );
 
-        Ok((vk.clone(), proof))
+        let result = (vk, proof);
+
+        Ok(result)
     }
 }

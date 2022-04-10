@@ -101,7 +101,7 @@ impl<E: Engine> WrappedTranscript<E> {
     ) -> Result<(), SynthesisError> {
         let value = element.value;
         for term in element.into_limbs().iter() {
-            let v = if let Some(_) = value {
+            let v = if value.is_some() {
                 match term.into_num() {
                     Num::Constant(c) => AllocatedNum::alloc(cs, || Ok(c))?,
                     Num::Variable(v) => v,

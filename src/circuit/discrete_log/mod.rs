@@ -1,75 +1,69 @@
 pub mod utils;
 
-use std::marker::PhantomData;
-
-use franklin_crypto::babyjubjub::JubjubEngine;
-use franklin_crypto::bellman::{Circuit, ConstraintSystem, SynthesisError};
-use franklin_crypto::circuit::baby_ecc::EdwardsPoint;
-use franklin_crypto::circuit::num::AllocatedNum;
+use franklin_crypto::babyjubjub::{edwards, JubjubEngine, Unknown};
+use franklin_crypto::bellman::plonk::better_better_cs::cs::{
+    Circuit, ConstraintSystem, Gate, GateInternal, Width4MainGateWithDNext,
+};
+use franklin_crypto::bellman::SynthesisError;
+use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
+use franklin_crypto::plonk::circuit::bigint::field::{FieldElement, RnsParameters};
+use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
 
 use crate::circuit::ipa_fs::utils::convert_bits_le;
+use crate::circuit::num::baby_ecc::EdwardsPoint;
 
 // Compute `H = aG` where `G`, `H` are elliptic curve elements and `a` is an finite field element.
 // `G`, `H` are public variables, while `a` is an private variable.
 // It is difficult to compute `a` using only `G` and `H` because discrete logarithm assumption.
 // So only those who know `a` will be able to pass this verification.
-pub struct DiscreteLogCircuit<E: JubjubEngine> {
-    pub base_point_x: Option<E::Fr>,
-    pub base_point_y: Option<E::Fr>,
+pub struct DiscreteLogCircuit<'a, E: JubjubEngine> {
+    pub base_point: Option<edwards::Point<E, Unknown>>,
     pub coefficient: Option<E::Fs>,
-    pub jubjub_params: E::Params,
-    pub _m: PhantomData<E>,
+    pub rns_params: &'a RnsParameters<E, E::Fs>,
+    pub jubjub_params: &'a E::Params,
 }
 
-impl<E: JubjubEngine> DiscreteLogCircuit<E> {
+impl<'a, E: JubjubEngine> DiscreteLogCircuit<'a, E> {
     pub fn run<CS: ConstraintSystem<E>>(
-        self,
+        &self,
         cs: &mut CS,
     ) -> Result<EdwardsPoint<E>, SynthesisError> {
-        let wrapped_base_point_x = AllocatedNum::alloc(cs.namespace(|| "base_point_x"), || {
-            Ok(self.base_point_x.unwrap())
-        })?;
-        let wrapped_base_point_y = AllocatedNum::alloc(cs.namespace(|| "base_point_y"), || {
-            Ok(self.base_point_y.unwrap())
-        })?;
-        let wrapped_base_point = EdwardsPoint::interpret(
-            cs.namespace(|| "base_point"),
-            &wrapped_base_point_x,
-            &wrapped_base_point_y,
-            &self.jubjub_params,
-        )?;
-        // let wrapped_coefficient = AllocatedNum::alloc(cs.namespace(|| "coefficient"), || {
-        //     Ok(self.coefficient.unwrap())
-        // })?;
+        let wrapped_base_point = {
+            let raw = if let Some(c) = &self.base_point {
+                let (x, y) = c.into_xy();
+                (Some(x), Some(y))
+            } else {
+                (None, None)
+            };
+            let x = AllocatedNum::alloc(cs, || raw.0.ok_or(SynthesisError::UnconstrainedVariable))?;
+            let y = AllocatedNum::alloc(cs, || raw.1.ok_or(SynthesisError::UnconstrainedVariable))?;
 
-        // let wrapped_coefficient_bits = wrapped_coefficient.into_bits_le_fixed(
-        //     cs.namespace(|| "coefficient_into_bits_le_fixed"),
-        //     E::Fs::NUM_BITS as usize,
-        // )?;
-        let wrapped_coefficient_bits = convert_bits_le(cs, self.coefficient, None)?;
-        let wrapped_output = wrapped_base_point.mul(
-            cs.namespace(|| "output"),
-            &wrapped_coefficient_bits,
-            &self.jubjub_params,
-        )?;
-        // let wrapped_output =
-        //     wrapped_output.double(cs.namespace(|| "add_output"), &self.jubjub_params)?;
-        // let wrapped_output = wrapped_base_point;
-
-        println!(
-            "wrapped_output: ({:?}, {:?})",
-            wrapped_output.get_x().get_value(),
-            wrapped_output.get_y().get_value()
-        );
+            EdwardsPoint::interpret(cs, &x, &y, self.jubjub_params)?
+        };
+        let coefficient =
+            FieldElement::new_allocated_in_field(cs, self.coefficient, self.rns_params)?;
+        let wrapped_coefficient_bits = convert_bits_le(cs, coefficient, None)?;
+        let wrapped_output =
+            wrapped_base_point.mul(cs, &wrapped_coefficient_bits, &self.jubjub_params)?;
+        wrapped_output.inputize(cs)?;
 
         Ok(wrapped_output)
     }
 }
 
-impl<E: JubjubEngine> Circuit<E> for DiscreteLogCircuit<E> {
-    fn synthesize<CS: ConstraintSystem<E>>(self, cs: &mut CS) -> Result<(), SynthesisError> {
+impl<'a, E: JubjubEngine> Circuit<E> for DiscreteLogCircuit<'a, E> {
+    type MainGate = Width4MainGateWithDNext;
+
+    fn declare_used_gates() -> Result<Vec<Box<dyn GateInternal<E>>>, SynthesisError> {
+        Ok(vec![
+            Self::MainGate::default().into_internal(),
+            TwoBitDecompositionRangecheckCustomGate::default().into_internal(),
+        ])
+    }
+
+    fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
         let wrapped_output = self.run(cs)?;
 
-        wrapped_output.inputize(cs.namespace(|| "alloc_output"))
+        wrapped_output.inputize(cs)
     }
 }

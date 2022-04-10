@@ -1,7 +1,11 @@
 use franklin_crypto::bellman::pairing::Engine;
-use franklin_crypto::bellman::{Circuit, ConstraintSystem, SynthesisError};
-use franklin_crypto::circuit::num::AllocatedNum;
+use franklin_crypto::bellman::plonk::better_better_cs::cs::{
+    Circuit, ConstraintSystem, Gate, GateInternal, Width4MainGateWithDNext,
+};
+use franklin_crypto::bellman::SynthesisError;
 use franklin_crypto::circuit::Assignment;
+use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
+use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
 use generic_array::{typenum::*, ArrayLength, GenericArray};
 use verkle_tree::ipa_fr::utils::{read_field_element_be, read_field_element_le};
 
@@ -21,7 +25,16 @@ where
 }
 
 impl<E: Engine, N: ArrayLength<Option<E::Fr>>> Circuit<E> for PoseidonCircuit<E, N> {
-    fn synthesize<CS>(self, cs: &mut CS) -> Result<(), SynthesisError>
+    type MainGate = Width4MainGateWithDNext;
+
+    fn declare_used_gates() -> Result<Vec<Box<dyn GateInternal<E>>>, SynthesisError> {
+        Ok(vec![
+            Self::MainGate::default().into_internal(),
+            TwoBitDecompositionRangecheckCustomGate::default().into_internal(),
+        ])
+    }
+
+    fn synthesize<CS>(&self, cs: &mut CS) -> Result<(), SynthesisError>
     where
         CS: ConstraintSystem<E>,
     {
@@ -31,20 +44,12 @@ impl<E: Engine, N: ArrayLength<Option<E::Fr>>> Circuit<E> for PoseidonCircuit<E,
             .inputs
             .iter()
             .enumerate()
-            .map(|(i, x)| {
-                AllocatedNum::alloc(cs.namespace(|| format!("allocate input[{}]", i)), || {
-                    Ok(*x.get()?)
-                })
-            })
+            .map(|(_, x)| AllocatedNum::alloc(cs, || Ok(*x.get()?)))
             .collect::<Result<Vec<_>, SynthesisError>>()?;
         let result = calc_poseidon(cs, &inputs)?;
-        let output = AllocatedNum::alloc(cs.namespace(|| "allocate output"), || {
-            Ok(*self.output.get()?)
-        })?;
-        output.inputize(cs.namespace(|| "output is public"))?;
-        result
-            .sub(cs.namespace(|| "subtract output from result"), &output)?
-            .assert_zero(cs.namespace(|| "result is equal to output"))?;
+        let output = AllocatedNum::alloc(cs, || Ok(*self.output.get()?))?;
+        output.inputize(cs)?;
+        result.sub(cs, &output)?.assert_is_zero(cs)?;
 
         Ok(())
     }
@@ -93,9 +98,9 @@ where
     E: Engine,
     CS: ConstraintSystem<E>,
 {
-    let input2 = input.square(cs.namespace(|| ""))?;
-    let input4 = input2.square(cs.namespace(|| ""))?;
-    let input5 = input4.mul(cs.namespace(|| ""), &input)?;
+    let input2 = input.square(cs)?;
+    let input4 = input2.square(cs)?;
+    let input5 = input4.mul(cs, &input)?;
 
     Ok(input5)
 }
@@ -130,17 +135,19 @@ where
     CS: ConstraintSystem<E>,
 {
     let mut outputs = vec![];
-    let zero = AllocatedNum::zero(cs.namespace(|| ""))?;
+    let zero = AllocatedNum::zero(cs);
 
     for i in 0..T {
         let mut lc = zero.clone();
         for j in 0..T {
             let m_reader = hex::decode(&m[j][i][2..]).unwrap();
-            let wrapped_m = AllocatedNum::alloc(cs.namespace(|| ""), || {
-                Ok(read_field_element_be::<E::Fr>(&m_reader).unwrap())
-            })?;
-            let tmp = inputs[j].mul(cs.namespace(|| ""), &wrapped_m)?; // tmp = inputs[j] * M[j][i]
-            lc = lc.add(cs.namespace(|| ""), &tmp)?;
+            let wrapped_m =
+                AllocatedNum::alloc(
+                    cs,
+                    || Ok(read_field_element_be::<E::Fr>(&m_reader).unwrap()),
+                )?;
+            let tmp = inputs[j].mul(cs, &wrapped_m)?; // tmp = inputs[j] * M[j][i]
+            lc = lc.add(cs, &tmp)?;
         }
 
         outputs.push(lc);
@@ -196,26 +203,26 @@ where
     assert_eq!(inputs.len(), input_num, "invalid inputs length");
 
     let domain_tag = read_field_element_le::<E::Fr>(&[3]).unwrap();
-    let wrapped_domain_tag = AllocatedNum::alloc(cs.namespace(|| ""), || Ok(domain_tag))?;
+    let wrapped_domain_tag = AllocatedNum::alloc(cs, || Ok(domain_tag))?;
     let mut elements = vec![wrapped_domain_tag];
     elements.append(&mut inputs.to_vec());
 
     let half_full_rounds = N_ROUNDS_F / 2;
     for i in 0..(N_ROUNDS_F + N_ROUNDS_P) {
         for (j, e) in elements.iter_mut().enumerate() {
-            let tmp = add_round_constant(cs, e.clone(), j + T * i)?;
+            let tmp = add_round_constant(cs, *e, j + T * i)?;
             let _ = std::mem::replace(e, tmp);
         }
 
         if i < half_full_rounds || i >= half_full_rounds + N_ROUNDS_P {
             // full round
             for e in elements.iter_mut() {
-                let tmp = calc_sigma(cs, e.clone())?;
+                let tmp = calc_sigma(cs, *e)?;
                 let _ = std::mem::replace(e, tmp);
             }
         } else {
             // partial round
-            elements[0] = calc_sigma(cs, elements[0].clone())?;
+            elements[0] = calc_sigma(cs, elements[0])?;
             // for j in 1..T {
             //   tmp[j] = tmp[j];
             // }
@@ -230,7 +237,7 @@ where
     // }
     // let elements = product_mds_with_matrix(cs, &elements, &M)?;
 
-    Ok(elements[1].clone())
+    Ok(elements[1])
 }
 
 const T: usize = 3; // width
