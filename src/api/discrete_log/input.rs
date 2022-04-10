@@ -46,15 +46,21 @@ fn test_discrete_log_circuit() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut rns_params =
         RnsParameters::<Bn256, <Bn256 as JubjubEngine>::Fs>::new_for_field(68, 110, 4);
+    // `Bn256::Fs::NUM_BITS` is odd number, so an assertion error occur at franklin-crypto/plonk/circuit/bigint/field.rs:400:9.
+    // Therefore, we modify `rns_params.binary_limbs_bit_widths[3]` to the next even number.
     let current_bits = rns_params.binary_limbs_bit_widths.last_mut().unwrap();
     let remainder = *current_bits % rns_params.range_check_info.minimal_multiple;
     if remainder != 0 {
         *current_bits += rns_params.range_check_info.minimal_multiple - remainder;
     }
-    dbg!(rns_params.binary_limbs_bit_widths.last_mut().unwrap());
+    dbg!(rns_params.binary_limbs_bit_widths.last().unwrap());
+
     let jubjub_params = &JubjubBn256::new();
+
+    // NOTE: Run `cargo run crs create` command in advance.
     let crs = open_crs_for_log2_of_size(23);
 
+    // base_point * coefficient = output
     let base_point_x = Fr::from_repr(FrRepr([
         0x6c1e3b06bd84f358,
         0x5ea091f77966fbcf,
@@ -88,11 +94,15 @@ fn test_discrete_log_circuit() -> Result<(), Box<dyn std::error::Error>> {
     .unwrap();
     let output = base_point.mul(coefficient, jubjub_params);
     assert_eq!(output.into_xy(), (output_x, output_y));
+
+    // Create a PlonK proof and a verification key.
     let circuit_input = DiscreteLogCircuitInput {
         base_point,
         coefficient,
     };
     let (vk, proof) = circuit_input.create_plonk_proof(jubjub_params, &rns_params, crs)?;
+
+    // Verify the proof.
     let is_valid = verify::<_, _, RollingKeccakTranscript<Fr>>(&vk, &proof, None)
         .expect("must perform verification");
     assert!(is_valid);
