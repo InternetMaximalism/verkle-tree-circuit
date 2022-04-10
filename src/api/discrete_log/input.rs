@@ -34,11 +34,15 @@ fn test_discrete_log_circuit() -> Result<(), Box<dyn std::error::Error>> {
     use franklin_crypto::babyjubjub::fs::{Fs, FsRepr};
     use franklin_crypto::babyjubjub::{edwards, JubjubBn256, JubjubEngine, Unknown};
     use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr, FrRepr};
+    use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
     use franklin_crypto::bellman::{PrimeField, PrimeFieldRepr};
     use franklin_crypto::plonk::circuit::bigint::field::RnsParameters;
+    use std::{fs::OpenOptions, path::Path};
 
     use crate::api::discrete_log::input::DiscreteLogCircuitInput;
     use crate::api::utils::open_crs_for_log2_of_size;
+
+    const CIRCUIT_NAME: &str = "discrete_log";
 
     let mut rns_params =
         RnsParameters::<Bn256, <Bn256 as JubjubEngine>::Fs>::new_for_field(68, 110, 4);
@@ -88,7 +92,29 @@ fn test_discrete_log_circuit() -> Result<(), Box<dyn std::error::Error>> {
         base_point,
         coefficient,
     };
-    circuit_input.create_plonk_proof(jubjub_params, &rns_params, crs)?;
+    let (vk, proof) = circuit_input.create_plonk_proof(jubjub_params, &rns_params, crs)?;
+    let is_valid = verify::<_, _, RollingKeccakTranscript<Fr>>(&vk, &proof, None)
+        .expect("must perform verification");
+    assert!(is_valid);
+
+    let proof_path = Path::new("./test_cases")
+        .join(CIRCUIT_NAME)
+        .join("proof_case1");
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(proof_path)?;
+    proof.write(file)?;
+    let vk_path = Path::new("./test_cases")
+        .join(CIRCUIT_NAME)
+        .join("vk_case1");
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(vk_path)?;
+    vk.write(file)?;
 
     Ok(())
 }
