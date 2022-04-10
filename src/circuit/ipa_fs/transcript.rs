@@ -113,7 +113,7 @@ where
         cs: &mut CS,
         element: &AllocatedNum<E>,
     ) -> Result<(), SynthesisError> {
-        let inputs = vec![self.state.clone(), *element];
+        let inputs = vec![self.state, *element];
         self.state = calc_poseidon::<E, CS>(cs, &inputs)?;
 
         Ok(())

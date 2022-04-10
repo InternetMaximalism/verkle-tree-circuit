@@ -138,7 +138,7 @@ where
     let zero = AllocatedNum::zero(cs);
 
     for i in 0..T {
-        let mut lc = zero.clone();
+        let mut lc = zero;
         for j in 0..T {
             let m_reader = hex::decode(&m[j][i][2..]).unwrap();
             let wrapped_m =

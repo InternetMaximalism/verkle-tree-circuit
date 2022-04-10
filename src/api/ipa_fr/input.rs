@@ -73,14 +73,14 @@ mod ipa_api_tests {
         rns_params: &BaseRnsParameters<Bn256>,
         ipa_conf: &IpaConfig<G1Affine>,
     ) -> anyhow::Result<IpaCircuitInput> {
-        let commitment = ipa_conf.commit(&poly).unwrap();
+        let commitment = ipa_conf.commit(poly).unwrap();
         let (proof, ip) = IpaProof::<G1Affine>::create(
             commitment,
             poly,
             eval_point,
             transcript_params,
             rns_params,
-            &ipa_conf,
+            ipa_conf,
         )?;
 
         // let lagrange_coeffs = ipa_conf
@@ -139,7 +139,7 @@ mod ipa_api_tests {
             .create_plonk_proof::<WrapperUnchecked<'_, Bn256>>(
                 prover_transcript.into_params(),
                 ipa_conf,
-                &rns_params,
+                rns_params,
                 crs,
             )?;
         let proof_path = Path::new("./test_cases")

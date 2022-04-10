@@ -42,7 +42,7 @@ mod batch_proof_api_tests {
             &zs,
             transcript_params,
             rns_params,
-            &ipa_conf,
+            ipa_conf,
         )?;
 
         Ok(BatchProofCircuitInput {

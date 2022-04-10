@@ -70,7 +70,7 @@ mod batch_proof_api_tests {
             &zs,
             transcript_params,
             rns_params,
-            &ipa_conf,
+            ipa_conf,
         )?;
 
         let ys = fs
@@ -111,7 +111,7 @@ mod batch_proof_api_tests {
         // let poly = vec![12, 97, 37, 0, 1, 208, 132, 3];
         let fs = polys
             .iter()
-            .map(|poly| test_poly::<Fr>(&poly, domain_size))
+            .map(|poly| test_poly::<Fr>(poly, domain_size))
             .collect::<Vec<_>>();
         let zs = vec![1, 0];
         let prover_transcript = PoseidonBn256Transcript::with_bytes(b"multi_proof");

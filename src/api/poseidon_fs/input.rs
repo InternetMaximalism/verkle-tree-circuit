@@ -304,6 +304,7 @@ impl<N: ArrayLength<Option<Fr>>> PoseidonCircuitInput<N> {
     //     Ok((vk.clone(), proof))
     // }
 
+    #[allow(clippy::type_complexity)]
     pub fn create_plonk_proof(
         &self,
         crs: Crs<Bn256, CrsForMonomialForm>,

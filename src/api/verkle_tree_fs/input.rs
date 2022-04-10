@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod batch_proof_api_tests {
-    use std::fs::OpenOptions;
-    use std::path::Path;
+    
+    
 
     use franklin_crypto::babyjubjub::{JubjubBn256, JubjubEngine};
-    use franklin_crypto::bellman::groth16::{prepare_verifying_key, verify_proof};
+    
     use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr};
     use franklin_crypto::plonk::circuit::bigint::field::RnsParameters;
     use verkle_tree::batch_proof_fs::BatchProof;
@@ -46,7 +46,7 @@ mod batch_proof_api_tests {
         )?;
 
         Ok(BatchProofCircuitInput {
-            proof: proof.clone(),
+            proof: proof,
             commitments,
             zs,
             ys,

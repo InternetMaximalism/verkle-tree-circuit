@@ -51,6 +51,7 @@ impl<E: JubjubEngine> From<IpaProof<E>> for OptionIpaProof<E> {
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn generate_challenges<'a, E, CS, T>(
     cs: &mut CS,
     ipa_proof: &OptionIpaProof<E>,

@@ -4,7 +4,6 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use franklin_crypto::{
     babyjubjub::{edwards, JubjubBn256, JubjubEngine, Unknown},
     bellman::{
-        groth16::{create_random_proof, generate_random_parameters, Proof, VerifyingKey},
         pairing::bn256::{Bn256, Fr},
         PrimeField, PrimeFieldRepr, SynthesisError,
     },
@@ -39,10 +38,7 @@ mod batch_proof_fs_api_tests {
 
     use franklin_crypto::{
         babyjubjub::{JubjubBn256, JubjubEngine},
-        bellman::{
-            groth16::{prepare_verifying_key, verify_proof},
-            pairing::bn256::{Bn256, Fr},
-        },
+        bellman::pairing::bn256::{Bn256, Fr},
         plonk::circuit::bigint::field::RnsParameters,
     };
     use verkle_tree::{
@@ -72,11 +68,11 @@ mod batch_proof_fs_api_tests {
 
         dbg!(commitments.len());
         let (proof, ys) = BatchProof::<Bn256>::create(
-            &commitments.clone(),
+            &commitments,
             poly_list,
             eval_points,
             transcript_params,
-            &ipa_conf,
+            ipa_conf,
             jubjub_params,
         )?;
 
@@ -271,7 +267,7 @@ impl BatchProofCircuitInput {
         jubjub_params: &JubjubBn256,
     ) -> Result<(), SynthesisError> {
         let num_rounds = log2_ceil(ipa_conf.get_domain_size()) as usize;
-        let dummy_circuit = BatchProofCircuit::<Bn256> {
+        let _dummy_circuit = BatchProofCircuit::<Bn256> {
             transcript_params: None,
             commitments: vec![None; num_rounds],
             proof: OptionIpaProof::with_depth(num_rounds),
@@ -294,12 +290,12 @@ impl BatchProofCircuitInput {
         // let is_satisfied = dummy_assembly.is_satisfied();
         // assert!(is_satisfied, "unsatisfied constraints");
 
-        let rng = &mut rand::thread_rng();
+        let _rng = &mut rand::thread_rng();
         // let setup = generate_random_parameters::<Bn256, _, _>(dummy_circuit, rng)?;
 
         // let vk = &setup.vk;
 
-        let circuit = BatchProofCircuit::<Bn256> {
+        let _circuit = BatchProofCircuit::<Bn256> {
             transcript_params: Some(transcript_params),
             commitments: self
                 .commitments

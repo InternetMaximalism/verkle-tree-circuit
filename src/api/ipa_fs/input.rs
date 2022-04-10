@@ -76,13 +76,13 @@ mod ipa_api_tests {
         jubjub_params: &JubjubBn256,
         ipa_conf: &IpaConfig<Bn256>,
     ) -> anyhow::Result<IpaCircuitInput> {
-        let commitment = ipa_conf.commit(&poly).unwrap();
+        let commitment = ipa_conf.commit(poly).unwrap();
         let (proof, ip) = IpaProof::<Bn256>::create(
             commitment.clone(),
             poly,
             eval_point,
             transcript_params,
-            &ipa_conf,
+            ipa_conf,
             jubjub_params,
         )?;
 
@@ -384,6 +384,7 @@ impl IpaCircuitInput {
     //     Ok((vk.clone(), proof))
     // }
 
+    #[allow(clippy::type_complexity)]
     pub fn create_plonk_proof<'a, WP: WrappedAffinePoint<'a, Bn256>>(
         &self,
         transcript_params: Fr,

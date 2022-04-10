@@ -42,16 +42,16 @@ where
     {
         let chunk_a = chunk
             .get(0)
-            .map(|e| e.clone())
-            .unwrap_or(Boolean::constant(false));
+            .copied()
+            .unwrap_or_else(|| Boolean::constant(false));
         let chunk_b = chunk
             .get(1)
-            .map(|e| e.clone())
-            .unwrap_or(Boolean::constant(false));
+            .copied()
+            .unwrap_or_else(|| Boolean::constant(false));
         let chunk_c = chunk
             .get(2)
-            .map(|e| e.clone())
-            .unwrap_or(Boolean::constant(false));
+            .copied()
+            .unwrap_or_else(|| Boolean::constant(false));
 
         let (x, y) = lookup3_xy(cs, &[chunk_a, chunk_b, chunk_c], window)?;
 
@@ -119,7 +119,7 @@ impl<E: JubjubEngine> EdwardsPoint<E> {
         let y = self.y.into_bits_le(cs, None)?;
 
         tmp.extend(y);
-        tmp.push(x[0].clone());
+        tmp.push(x[0]);
 
         Ok(tmp)
     }
@@ -285,10 +285,7 @@ impl<E: JubjubEngine> EdwardsPoint<E> {
             cs.allocate_main_gate(term)?;
         }
 
-        Ok(EdwardsPoint {
-            x: x.clone(),
-            y: y.clone(),
-        })
+        Ok(EdwardsPoint { x: *x, y: *y })
     }
 
     pub fn double<CS>(&self, cs: &mut CS, params: &E::Params) -> Result<Self, SynthesisError>

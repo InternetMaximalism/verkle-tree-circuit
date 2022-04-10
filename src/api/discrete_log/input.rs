@@ -104,6 +104,7 @@ impl DiscreteLogCircuitInput {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn create_plonk_proof(
         &self,
         jubjub_params: &JubjubBn256,
@@ -125,7 +126,7 @@ impl DiscreteLogCircuitInput {
 
         let circuit = DiscreteLogCircuit::<Bn256> {
             base_point: Some(self.base_point.clone()),
-            coefficient: Some(self.coefficient.clone()),
+            coefficient: Some(self.coefficient),
             rns_params,
             jubjub_params,
         };

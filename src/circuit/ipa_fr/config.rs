@@ -16,7 +16,7 @@ pub fn compute_barycentric_coefficients<E: Engine, CS: ConstraintSystem<E>>(
     let mut total_prod = AllocatedNum::<E>::one(cs);
     let barycentric_weights = precomputed_weights.get_barycentric_weights();
     for (i, barycentric_weights_i) in barycentric_weights.iter().enumerate() {
-        let weight = AllocatedNum::<E>::alloc_cnst(cs, barycentric_weights[i])?;
+        let weight = AllocatedNum::<E>::alloc_cnst(cs, *barycentric_weights_i)?;
         let tmp_value = read_field_element_le::<E::Fr>(&i.to_le_bytes())?;
         let tmp = AllocatedNum::<E>::alloc_cnst(cs, tmp_value)?;
         let tmp = tmp.sub(cs, point)?;

@@ -42,7 +42,7 @@ impl<F: Field> SomeField<F> for Option<F> {
         match (self, other) {
             (Some(s), Some(o)) => {
                 let mut tmp = *s;
-                tmp.add_assign(&o);
+                tmp.add_assign(o);
 
                 Some(tmp)
             }
@@ -53,7 +53,7 @@ impl<F: Field> SomeField<F> for Option<F> {
         match (self, other) {
             (Some(s), Some(o)) => {
                 let mut tmp = *s;
-                tmp.sub_assign(&o);
+                tmp.sub_assign(o);
 
                 Some(tmp)
             }
@@ -64,7 +64,7 @@ impl<F: Field> SomeField<F> for Option<F> {
         match (self, other) {
             (Some(s), Some(o)) => {
                 let mut tmp = *s;
-                tmp.mul_assign(&o);
+                tmp.mul_assign(o);
 
                 Some(tmp)
             }
@@ -75,8 +75,8 @@ impl<F: Field> SomeField<F> for Option<F> {
         match (self, to_mul, to_add) {
             (Some(s), Some(m), Some(a)) => {
                 let mut tmp = *s;
-                tmp.mul_assign(&m);
-                tmp.add_assign(&a);
+                tmp.mul_assign(m);
+                tmp.add_assign(a);
 
                 Some(tmp)
             }

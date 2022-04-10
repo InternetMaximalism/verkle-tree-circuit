@@ -44,7 +44,7 @@ impl<'a, E: JubjubEngine> DiscreteLogCircuit<'a, E> {
             FieldElement::new_allocated_in_field(cs, self.coefficient, self.rns_params)?;
         let wrapped_coefficient_bits = convert_bits_le(cs, coefficient, None)?;
         let wrapped_output =
-            wrapped_base_point.mul(cs, &wrapped_coefficient_bits, &self.jubjub_params)?;
+            wrapped_base_point.mul(cs, &wrapped_coefficient_bits, self.jubjub_params)?;
         wrapped_output.inputize(cs)?;
 
         Ok(wrapped_output)
