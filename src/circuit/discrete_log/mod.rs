@@ -1,6 +1,7 @@
 pub mod utils;
 
 use franklin_crypto::babyjubjub::{edwards, JubjubEngine, Unknown};
+use franklin_crypto::bellman::plonk::better_better_cs::cs::{ArithmeticTerm, MainGateTerm};
 use franklin_crypto::bellman::{
     plonk::better_better_cs::cs::{
         Circuit, ConstraintSystem, Gate, GateInternal, Width4MainGateWithDNext,
@@ -54,9 +55,30 @@ impl<'a, E: JubjubEngine, AD: AuxData<E>> DiscreteLogCircuit<'a, E, AD> {
             .map(|v| AllocatedBit::alloc(cs, *v).and_then(|v| Ok(Boolean::from(v))))
             .collect::<Result<Vec<Boolean>, SynthesisError>>()?;
 
-        // let wrapped_output = allocate_edwards_point(cs, &self.output, self.jubjub_params)?;
         let wrapped_output =
             wrapped_base_point.mul(cs, &wrapped_coefficient_bits, self.jubjub_params)?;
+        let self_wrapped_output = allocate_edwards_point(cs, &self.output, self.jubjub_params)?;
+        {
+            let wrapped_output_term =
+                ArithmeticTerm::<E>::from_variable(wrapped_output.get_x().get_variable());
+            let self_wrapped_output_term =
+                ArithmeticTerm::from_variable(self_wrapped_output.get_x().get_variable());
+
+            let mut term = MainGateTerm::new();
+            term.add_assign(wrapped_output_term);
+            term.sub_assign(self_wrapped_output_term);
+            cs.allocate_main_gate(term)?;
+
+            let wrapped_output_term =
+                ArithmeticTerm::<E>::from_variable(wrapped_output.get_y().get_variable());
+            let self_wrapped_output_term =
+                ArithmeticTerm::from_variable(self_wrapped_output.get_y().get_variable());
+
+            let mut term = MainGateTerm::new();
+            term.add_assign(wrapped_output_term);
+            term.sub_assign(self_wrapped_output_term);
+            cs.allocate_main_gate(term)?;
+        }
 
         // force to use TwoBitDecompositionRangecheckCustomGate
         // TODO: unnecessary code
@@ -71,7 +93,7 @@ impl<'a, E: JubjubEngine, AD: AuxData<E>> DiscreteLogCircuit<'a, E, AD> {
                 WrapperUnchecked::alloc(cs, Some(some_point), &rns_params, &self.aux_data)?;
         }
 
-        Ok((wrapped_base_point, wrapped_output))
+        Ok((wrapped_base_point, self_wrapped_output))
     }
 }
 
