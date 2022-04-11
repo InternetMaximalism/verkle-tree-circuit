@@ -52,7 +52,7 @@ mod batch_proof_fs_api_tests {
 
     use super::BatchProofCircuitInput;
 
-    const CIRCUIT_NAME: &str = "ipa_fs";
+    const CIRCUIT_NAME: &str = "batch_proof_fs";
 
     fn make_test_input(
         poly_list: &[Vec<<Bn256 as JubjubEngine>::Fs>],
