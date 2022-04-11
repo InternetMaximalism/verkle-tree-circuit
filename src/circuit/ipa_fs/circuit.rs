@@ -12,8 +12,8 @@ use verkle_tree::ipa_fs::config::{Committer, IpaConfig};
 use verkle_tree::ipa_fs::utils::log2_ceil;
 
 use crate::circuit::ipa_fs::config::compute_barycentric_coefficients;
-use crate::circuit::ipa_fs::utils::convert_bits_le;
 use crate::circuit::num::baby_ecc::EdwardsPoint;
+use crate::circuit::num::convert_bits_le;
 
 use super::proof::{generate_challenges, OptionIpaProof};
 use super::transcript::{Transcript, WrappedTranscript};

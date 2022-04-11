@@ -9,8 +9,8 @@ use franklin_crypto::plonk::circuit::bigint::field::{FieldElement, RnsParameters
 use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
 use verkle_tree::ipa_fs::config::IpaConfig;
 
-use crate::circuit::ipa_fs::utils::convert_bits_le;
 use crate::circuit::num::baby_ecc::EdwardsPoint;
+use crate::circuit::num::convert_bits_le;
 
 use super::ipa_fs::circuit::IpaCircuit;
 use super::ipa_fs::proof::OptionIpaProof;

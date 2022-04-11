@@ -106,22 +106,22 @@ where
     // );
     {
         let x_coeffs_1 = AllocatedNum::alloc(cs, || Ok(x_coeffs[0b001]))?;
-        let x_coeffs_1_term = ArithmeticTerm::<E>::from_variable(x_coeffs_1.get_variable());
+        let x_coeffs_1_term = ArithmeticTerm::from_variable(x_coeffs_1.get_variable());
         let x_coeffs_3 = AllocatedNum::alloc(cs, || Ok(x_coeffs[0b011]))?;
         let select_1 = AllocatedNum::conditionally_select(cs, &x_coeffs_3, &zero, &bits[1])?;
-        let select_1_term = ArithmeticTerm::<E>::from_variable(select_1.get_variable());
+        let select_1_term = ArithmeticTerm::from_variable(select_1.get_variable());
         let x_coeffs_5 = AllocatedNum::alloc(cs, || Ok(x_coeffs[0b101]))?;
         let select_2 = AllocatedNum::conditionally_select(cs, &x_coeffs_5, &zero, &bits[2])?;
-        let select_2_term = ArithmeticTerm::<E>::from_variable(select_2.get_variable());
+        let select_2_term = ArithmeticTerm::from_variable(select_2.get_variable());
         let x_coeffs_7 = AllocatedNum::alloc(cs, || Ok(x_coeffs[0b111]))?;
         let select_3 = AllocatedNum::conditionally_select(cs, &x_coeffs_7, &zero, &precomp)?;
-        let select_3_term = ArithmeticTerm::<E>::from_variable(select_3.get_variable());
+        let select_3_term = ArithmeticTerm::from_variable(select_3.get_variable());
         let left = res_x
             .sub(cs, &x_coeffs_1)?
             .sub(cs, &select_1)?
             .add(cs, &select_2)?
             .add(cs, &select_3)?;
-        let left_term = ArithmeticTerm::<E>::from_variable(left.get_variable());
+        let left_term = ArithmeticTerm::from_variable(left.get_variable());
 
         let mut term1 = MainGateTerm::new();
         term1.add_assign(x_coeffs_1_term);
@@ -134,24 +134,24 @@ where
         let right_select = AllocatedNum::conditionally_select(cs, &one, &zero, &bits[0])?;
 
         // output = res_x - x_coeffs[0b000] - bits[1] ? x_coeffs[0b010] : 0 + bits[2] ? x_coeffs[0b100] : 0 + precomp ? x_coeffs[0b110] : 0
-        let res_x_term = ArithmeticTerm::<E>::from_variable(res_x.get_variable());
+        let res_x_term = ArithmeticTerm::from_variable(res_x.get_variable());
         let x_coeffs_0 = AllocatedNum::alloc(cs, || Ok(x_coeffs[0b000]))?;
-        let x_coeffs_0_term = ArithmeticTerm::<E>::from_variable(x_coeffs_0.get_variable());
+        let x_coeffs_0_term = ArithmeticTerm::from_variable(x_coeffs_0.get_variable());
         let x_coeffs_2 = AllocatedNum::alloc(cs, || Ok(x_coeffs[0b010]))?;
         let select_1 = AllocatedNum::conditionally_select(cs, &x_coeffs_2, &zero, &bits[1])?;
-        let select_1_term = ArithmeticTerm::<E>::from_variable(select_1.get_variable());
+        let select_1_term = ArithmeticTerm::from_variable(select_1.get_variable());
         let x_coeffs_4 = AllocatedNum::alloc(cs, || Ok(x_coeffs[0b100]))?;
         let select_2 = AllocatedNum::conditionally_select(cs, &x_coeffs_4, &zero, &bits[2])?;
-        let select_2_term = ArithmeticTerm::<E>::from_variable(select_2.get_variable());
+        let select_2_term = ArithmeticTerm::from_variable(select_2.get_variable());
         let x_coeffs_6 = AllocatedNum::alloc(cs, || Ok(x_coeffs[0b110]))?;
         let select_3 = AllocatedNum::conditionally_select(cs, &x_coeffs_6, &zero, &precomp)?;
-        let select_3_term = ArithmeticTerm::<E>::from_variable(select_3.get_variable());
+        let select_3_term = ArithmeticTerm::from_variable(select_3.get_variable());
         let output = res_x
             .sub(cs, &x_coeffs_0)?
             .sub(cs, &select_1)?
             .add(cs, &select_2)?
             .add(cs, &select_3)?;
-        let output_term = ArithmeticTerm::<E>::from_variable(output.get_variable());
+        let output_term = ArithmeticTerm::from_variable(output.get_variable());
 
         let mut term3 = MainGateTerm::new();
         term3.add_assign(res_x_term);
@@ -190,22 +190,22 @@ where
     // );
     {
         let y_coeffs_1 = AllocatedNum::alloc(cs, || Ok(y_coeffs[0b001]))?;
-        let y_coeffs_1_term = ArithmeticTerm::<E>::from_variable(y_coeffs_1.get_variable());
+        let y_coeffs_1_term = ArithmeticTerm::from_variable(y_coeffs_1.get_variable());
         let y_coeffs_3 = AllocatedNum::alloc(cs, || Ok(y_coeffs[0b011]))?;
         let select_1 = AllocatedNum::conditionally_select(cs, &y_coeffs_3, &zero, &bits[1])?;
-        let select_1_term = ArithmeticTerm::<E>::from_variable(select_1.get_variable());
+        let select_1_term = ArithmeticTerm::from_variable(select_1.get_variable());
         let y_coeffs_5 = AllocatedNum::alloc(cs, || Ok(y_coeffs[0b101]))?;
         let select_2 = AllocatedNum::conditionally_select(cs, &y_coeffs_5, &zero, &bits[2])?;
-        let select_2_term = ArithmeticTerm::<E>::from_variable(select_2.get_variable());
+        let select_2_term = ArithmeticTerm::from_variable(select_2.get_variable());
         let y_coeffs_7 = AllocatedNum::alloc(cs, || Ok(y_coeffs[0b111]))?;
         let select_3 = AllocatedNum::conditionally_select(cs, &y_coeffs_7, &zero, &precomp)?;
-        let select_3_term = ArithmeticTerm::<E>::from_variable(select_3.get_variable());
+        let select_3_term = ArithmeticTerm::from_variable(select_3.get_variable());
         let left = res_x
             .sub(cs, &y_coeffs_1)?
             .sub(cs, &select_1)?
             .add(cs, &select_2)?
             .add(cs, &select_3)?;
-        let left_term = ArithmeticTerm::<E>::from_variable(left.get_variable());
+        let left_term = ArithmeticTerm::from_variable(left.get_variable());
 
         let mut term1 = MainGateTerm::new();
         term1.add_assign(y_coeffs_1_term);
@@ -217,24 +217,24 @@ where
 
         let right_select = AllocatedNum::conditionally_select(cs, &one, &zero, &bits[0])?;
 
-        let res_y_term = ArithmeticTerm::<E>::from_variable(res_y.get_variable());
+        let res_y_term = ArithmeticTerm::from_variable(res_y.get_variable());
         let y_coeffs_0 = AllocatedNum::alloc(cs, || Ok(y_coeffs[0b000]))?;
-        let y_coeffs_0_term = ArithmeticTerm::<E>::from_variable(y_coeffs_0.get_variable());
+        let y_coeffs_0_term = ArithmeticTerm::from_variable(y_coeffs_0.get_variable());
         let y_coeffs_2 = AllocatedNum::alloc(cs, || Ok(y_coeffs[0b010]))?;
         let select_1 = AllocatedNum::conditionally_select(cs, &y_coeffs_2, &zero, &bits[1])?;
-        let select_1_term = ArithmeticTerm::<E>::from_variable(select_1.get_variable());
+        let select_1_term = ArithmeticTerm::from_variable(select_1.get_variable());
         let y_coeffs_4 = AllocatedNum::alloc(cs, || Ok(y_coeffs[0b100]))?;
         let select_2 = AllocatedNum::conditionally_select(cs, &y_coeffs_4, &zero, &bits[2])?;
-        let select_2_term = ArithmeticTerm::<E>::from_variable(select_2.get_variable());
+        let select_2_term = ArithmeticTerm::from_variable(select_2.get_variable());
         let y_coeffs_6 = AllocatedNum::alloc(cs, || Ok(y_coeffs[0b110]))?;
         let select_3 = AllocatedNum::conditionally_select(cs, &y_coeffs_6, &zero, &precomp)?;
-        let select_3_term = ArithmeticTerm::<E>::from_variable(select_3.get_variable());
+        let select_3_term = ArithmeticTerm::from_variable(select_3.get_variable());
         let output = res_y
             .sub(cs, &y_coeffs_0)?
             .sub(cs, &select_1)?
             .add(cs, &select_2)?
             .add(cs, &select_3)?;
-        let output_term = ArithmeticTerm::<E>::from_variable(output.get_variable());
+        let output_term = ArithmeticTerm::from_variable(output.get_variable());
 
         let mut term3 = MainGateTerm::new();
         term3.add_assign(res_y_term);

@@ -167,13 +167,13 @@ impl<E: JubjubEngine> EdwardsPoint<E> {
         // condition * x = x'
         // if condition is 0, x' must be 0
         // if condition is 1, x' must be x
-        let zero = AllocatedNum::zero(cs);
         // cs.enforce(
         //     || "x' computation",
         //     |lc| lc + self.x.get_variable(),
         //     |_| condition.lc(E::Fr::one()),
         //     |lc| lc + x_prime.get_variable(),
         // );
+        let zero = AllocatedNum::zero(cs);
         let x_prime = AllocatedNum::conditionally_select(cs, &self.x, &zero, condition)?;
 
         // Compute y' = self.y if condition, and 1 otherwise
@@ -188,13 +188,13 @@ impl<E: JubjubEngine> EdwardsPoint<E> {
         // condition * y = y' - (1 - condition)
         // if condition is 0, y' must be 1
         // if condition is 1, y' must be y
-        let one = AllocatedNum::one(cs);
         // cs.enforce(
         //     || "y' computation",
         //     |lc| lc + self.y.get_variable(),
         //     |_| condition.lc(E::Fr::one()),
         //     |lc| lc + y_prime.get_variable() - &condition.not().lc(E::Fr::one()),
         // );
+        let one = AllocatedNum::one(cs);
         let y_prime = AllocatedNum::conditionally_select(cs, &self.y, &one, condition)?;
 
         Ok(EdwardsPoint {
@@ -261,8 +261,9 @@ impl<E: JubjubEngine> EdwardsPoint<E> {
         let x2 = x.square(cs)?;
         let y2 = y.square(cs)?;
         let x2y2 = x2.mul(cs, &y2)?;
+        let dx2y2 = x2y2.mul_constant(cs, *params.edwards_d())?;
+        let ax2 = x2.mul_constant(cs, *params.edwards_a())?;
 
-        let one = cs.get_explicit_one()?;
         // cs.enforce(
         //     || "on curve check",
         //     |lc| lc + (*params.edwards_a(), x2.get_variable()) + y2.get_variable(),
@@ -270,18 +271,17 @@ impl<E: JubjubEngine> EdwardsPoint<E> {
         //     |lc| lc + one + (*params.edwards_d(), x2y2.get_variable()),
         // );
         {
-            let mut self_x2_times_a_term = ArithmeticTerm::from_variable(x2.get_variable());
-            let self_y2_term = ArithmeticTerm::from_variable(y2.get_variable());
-            self_x2_times_a_term.scale(params.edwards_a());
+            let one = cs.get_explicit_one()?;
+            let ax2_term = ArithmeticTerm::<E>::from_variable(ax2.get_variable());
+            let y2_term = ArithmeticTerm::from_variable(y2.get_variable());
             let one_term = ArithmeticTerm::from_variable(one);
-            let mut x2y2_times_d_term = ArithmeticTerm::from_variable(x2y2.get_variable());
-            x2y2_times_d_term.scale(params.edwards_d());
+            let dx2y2_term = ArithmeticTerm::from_variable(dx2y2.get_variable());
 
             let mut term = MainGateTerm::new();
-            term.add_assign(self_x2_times_a_term);
-            term.add_assign(self_y2_term);
+            term.add_assign(ax2_term);
+            term.add_assign(y2_term);
             term.sub_assign(one_term);
-            term.sub_assign(x2y2_times_d_term);
+            term.sub_assign(dx2y2_term);
             cs.allocate_main_gate(term)?;
         }
 
@@ -346,13 +346,13 @@ impl<E: JubjubEngine> EdwardsPoint<E> {
             }
         })?;
 
-        let one = cs.get_explicit_one()?;
         // cs.enforce(
         //     || "x3 computation",
         //     |lc| lc + one + c.get_variable(),
         //     |lc| lc + x3.get_variable(),
         //     |lc| lc + a.get_variable() + a.get_variable(),
         // );
+        let one = cs.get_explicit_one()?;
         {
             let mut term1 = MainGateTerm::new();
             let c_term = ArithmeticTerm::from_variable(c.get_variable());
@@ -484,41 +484,37 @@ impl<E: JubjubEngine> EdwardsPoint<E> {
         //     |lc| lc + other.x.get_variable() + other.y.get_variable(),
         //     |lc| lc + t.get_variable(),
         // );
+        let self_x_a = self.x.mul_constant(cs, *params.edwards_a())?;
+        let left = self.y.sub(cs, &self_x_a)?;
+        let right = other.x.add(cs, &other.y)?;
+        let output = left.mul(cs, &right)?;
         {
-            let mut term1 = MainGateTerm::new();
-            let mut self_x_a_term = ArithmeticTerm::from_variable(self.x.get_variable());
-            self_x_a_term.scale(params.edwards_a());
+            let self_x_a_term = ArithmeticTerm::from_variable(self_x_a.get_variable());
             let self_y_term = ArithmeticTerm::from_variable(self.y.get_variable());
-            let left = self
-                .x
-                .mul_constant(cs, *params.edwards_a())?
-                .add(cs, &self.y)?;
             let left_term = ArithmeticTerm::from_variable(left.get_variable());
 
+            let mut term1 = MainGateTerm::new();
             term1.sub_assign(self_x_a_term);
             term1.add_assign(self_y_term);
-            term1.sub_assign(left_term.clone());
-
-            let mut term2 = MainGateTerm::new();
+            term1.sub_assign(left_term);
+            cs.allocate_main_gate(term1)?;
 
             let other_x_term = ArithmeticTerm::from_variable(other.x.get_variable());
             let other_y_term = ArithmeticTerm::from_variable(other.y.get_variable());
-            let right = other.x.add(cs, &other.y)?;
             let right_term = ArithmeticTerm::from_variable(right.get_variable());
 
+            let mut term2 = MainGateTerm::new();
             term2.add_assign(other_x_term);
             term2.add_assign(other_y_term);
             term2.sub_assign(right_term);
+            cs.allocate_main_gate(term2)?;
 
             let t_term = ArithmeticTerm::from_variable(t.get_variable());
+            let output_term = ArithmeticTerm::from_variable(output.get_variable());
 
             let mut term3 = MainGateTerm::new();
-            let output_term = left_term.mul_by_variable(right.get_variable());
             term3.add_assign(t_term);
             term3.sub_assign(output_term);
-
-            cs.allocate_main_gate(term1)?;
-            cs.allocate_main_gate(term2)?;
             cs.allocate_main_gate(term3)?;
         }
 
@@ -630,35 +626,41 @@ impl<E: JubjubEngine> EdwardsPoint<E> {
         //     |lc| lc + y3.get_variable(),
         //     |lc| lc + t.get_variable() + (*params.edwards_a(), a.get_variable()) - b.get_variable(),
         // );
+        let zero = AllocatedNum::zero(cs);
+        let neg_c = zero.sub(cs, &c)?;
+        let one_minus_c = neg_c.add_constant(cs, E::Fr::one())?;
+        let one_minus_c_times_y3 = y3.mul(cs, &one_minus_c)?;
+        let aa = a.mul_constant(cs, *params.edwards_a())?;
+        let output = t.add(cs, &aa)?.sub(cs, &b)?;
         {
-            let mut term1 = MainGateTerm::new();
-            let c_term = ArithmeticTerm::from_variable(c.get_variable());
-            let zero = AllocatedNum::zero(cs);
-            let neg_c = zero.sub(cs, &c)?;
-            let one_minus_c = neg_c.add_constant(cs, E::Fr::one())?.get_variable();
-            let one_minus_c_term = ArithmeticTerm::from_variable(one_minus_c);
-            let one_term = ArithmeticTerm::from_variable(one);
-            term1.add_assign(one_term);
-            term1.sub_assign(c_term);
-            term1.sub_assign(one_minus_c_term);
-            cs.allocate_main_gate(term1)?;
+            // let c_term = ArithmeticTerm::from_variable(c.get_variable());
+            // let one_minus_c_term = ArithmeticTerm::from_variable(one_minus_c.get_variable());
+            // let one_term = ArithmeticTerm::from_variable(one);
 
-            let y3_term = ArithmeticTerm::from_variable(y3.get_variable());
-            let one_minus_c_times_y3_term = y3_term.mul_by_variable(one_minus_c);
+            // let mut term1 = MainGateTerm::new();
+            // term1.add_assign(one_term);
+            // term1.sub_assign(c_term);
+            // term1.sub_assign(one_minus_c_term);
+            // cs.allocate_main_gate(term1)?;
 
-            let mut term3 = MainGateTerm::new();
-            let t_term = ArithmeticTerm::from_variable(t.get_variable());
-            let aa = a.mul_constant(cs, *params.edwards_a())?;
-            let mut aa_term = ArithmeticTerm::from_variable(a.get_variable());
-            aa_term.scale(params.edwards_a());
-            let b_term = ArithmeticTerm::from_variable(b.get_variable());
-            let t_plus_aa_minus_b_term =
-                ArithmeticTerm::from_variable(t.add(cs, &aa)?.add(cs, &b)?.get_variable());
-            term3.add_assign(t_term);
-            term3.add_assign(aa_term);
-            term3.sub_assign(b_term);
-            term3.sub_assign(t_plus_aa_minus_b_term.clone());
-            cs.allocate_main_gate(term3)?;
+            // let y3_term = ArithmeticTerm::from_variable(y3.get_variable());
+            let one_minus_c_times_y3_term =
+                ArithmeticTerm::from_variable(one_minus_c_times_y3.get_variable());
+
+            // let mut term3 = MainGateTerm::new();
+            // let t_term = ArithmeticTerm::from_variable(t.get_variable());
+            // let aa = a.mul_constant(cs, *params.edwards_a())?;
+            // let mut aa_term = ArithmeticTerm::from_variable(a.get_variable());
+            // aa_term.scale(params.edwards_a());
+            // let b_term = ArithmeticTerm::from_variable(b.get_variable());
+            let t_plus_aa_minus_b_term = ArithmeticTerm::from_variable(output.get_variable());
+            // let t_plus_aa_minus_b_term =
+            //     ArithmeticTerm::from_variable(t.add(cs, &aa)?.add(cs, &b)?.get_variable());
+            // term3.add_assign(t_term);
+            // term3.add_assign(aa_term);
+            // term3.sub_assign(b_term);
+            // term3.sub_assign(t_plus_aa_minus_b_term.clone());
+            // cs.allocate_main_gate(term3)?;
 
             let mut term = MainGateTerm::new();
             term.add_assign(one_minus_c_times_y3_term);
@@ -810,7 +812,7 @@ impl<E: JubjubEngine> MontgomeryPoint<E> {
         //     |lc| lc + &other.y.lc(E::Fr::one()) - &self.y.lc(E::Fr::one()),
         // );
         {
-            let x_term = ArithmeticTerm::<E>::from_variable(self.x.get_variable().get_variable());
+            let x_term = ArithmeticTerm::from_variable(self.x.get_variable().get_variable());
             let x_prime_term = ArithmeticTerm::from_variable(other.x.get_variable().get_variable());
             let x_prime_minus_x_term = ArithmeticTerm::from_variable(
                 other.x.sub(cs, &self.x)?.get_variable().get_variable(),
@@ -857,7 +859,7 @@ impl<E: JubjubEngine> MontgomeryPoint<E> {
         // );
         {
             let lambda2 = lambda.mul(cs, &lambda)?;
-            let lambda2_term = ArithmeticTerm::<E>::from_variable(lambda2.get_variable());
+            let lambda2_term = ArithmeticTerm::from_variable(lambda2.get_variable());
             let x_term = ArithmeticTerm::from_variable(self.x.get_variable().get_variable());
             let x_prime_term = ArithmeticTerm::from_variable(other.x.get_variable().get_variable());
             let x_double_prime = ArithmeticTerm::from_variable(xprime.get_variable());
@@ -889,7 +891,7 @@ impl<E: JubjubEngine> MontgomeryPoint<E> {
         //     |lc| lc + yprime.get_variable() + &self.y.lc(E::Fr::one()),
         // );
         {
-            let x_term = ArithmeticTerm::<E>::from_variable(self.x.get_variable().get_variable());
+            let x_term = ArithmeticTerm::from_variable(self.x.get_variable().get_variable());
             let x_prime_term = ArithmeticTerm::from_variable(xprime.get_variable());
             let x_minus_x_prime = self.x.get_variable().add(cs, &xprime)?;
             let x_minus_x_prime_term =

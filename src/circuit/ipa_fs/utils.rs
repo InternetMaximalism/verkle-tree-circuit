@@ -1,15 +1,13 @@
 use std::io::{Error, ErrorKind};
 
 use franklin_crypto::babyjubjub::JubjubEngine;
-use franklin_crypto::bellman::pairing::Engine;
 use franklin_crypto::bellman::plonk::better_better_cs::cs::ConstraintSystem;
-use franklin_crypto::bellman::{BitIterator, PrimeField, SynthesisError};
-// use franklin_crypto::circuit::boolean::{AllocatedBit, Boolean};
+use franklin_crypto::bellman::{PrimeField, SynthesisError};
 use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
 use franklin_crypto::plonk::circuit::bigint::field::FieldElement;
-use franklin_crypto::plonk::circuit::boolean::{AllocatedBit, Boolean};
 
 use crate::circuit::num::baby_ecc::EdwardsPoint;
+use crate::circuit::num::convert_bits_le;
 
 const FS_REPR_3_MASK: u64 = 0x03FFFFFFFFFFFFFF; // (250 - 192) bits
 
@@ -156,86 +154,4 @@ pub fn commit<'a, E: JubjubEngine, CS: ConstraintSystem<E>>(
     let result = multi_scalar::<E, CS>(cs, group_elements, polynomial, jubjub_params)?;
 
     Ok(result)
-}
-
-pub fn convert_bits_le<E, CS>(
-    cs: &mut CS,
-    value: FieldElement<E, E::Fs>,
-    bit_length: Option<usize>,
-) -> Result<Vec<Boolean>, SynthesisError>
-where
-    E: JubjubEngine,
-    CS: ConstraintSystem<E>,
-{
-    let bit_length = if let Some(bit_length) = bit_length {
-        assert!(bit_length <= E::Fs::NUM_BITS as usize);
-
-        bit_length
-    } else {
-        E::Fs::NUM_BITS as usize
-    };
-
-    let bits = field_into_allocated_bits_le_fixed(cs, value, bit_length)?;
-
-    // TODO
-    // let mut minus_one = E::Fs::one();
-    // minus_one.negate();
-
-    // let mut packed_lc = LinearCombination::zero();
-    // packed_lc.add_assign_variable_with_coeff(self, minus_one);
-
-    // let mut coeff = E::Fs::one();
-
-    // for bit in bits.iter() {
-    //     packed_lc.add_assign_bit_with_coeff(bit, coeff);
-
-    //     coeff.double();
-    // }
-
-    // packed_lc.enforce_zero(cs)?;
-
-    Ok(bits.into_iter().map(Boolean::from).collect())
-}
-
-pub fn field_into_allocated_bits_le_fixed<E: Engine, CS: ConstraintSystem<E>, F: PrimeField>(
-    cs: &mut CS,
-    value: FieldElement<E, F>,
-    bit_length: usize,
-) -> Result<Vec<AllocatedBit>, SynthesisError> {
-    assert!(bit_length <= F::NUM_BITS as usize);
-    // Deconstruct in big-endian bit order
-    let values = match value.get_field_value() {
-        Some(ref value) => {
-            let mut field_char = BitIterator::new(F::char());
-
-            let mut tmp = Vec::with_capacity(F::NUM_BITS as usize);
-
-            let mut found_one = false;
-            for b in BitIterator::new(value.into_repr()) {
-                // Skip leading bits
-                found_one |= field_char.next().unwrap();
-                if !found_one {
-                    continue;
-                }
-
-                tmp.push(Some(b));
-            }
-
-            assert_eq!(tmp.len(), F::NUM_BITS as usize);
-
-            tmp
-        }
-        None => vec![None; F::NUM_BITS as usize],
-    };
-
-    // Allocate in little-endian order
-    let bits = values
-        .into_iter()
-        .rev()
-        .enumerate()
-        .take(bit_length)
-        .map(|(_, b)| AllocatedBit::alloc(cs, b))
-        .collect::<Result<Vec<_>, SynthesisError>>()?;
-
-    Ok(bits)
 }
