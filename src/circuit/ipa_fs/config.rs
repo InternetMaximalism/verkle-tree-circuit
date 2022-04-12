@@ -15,11 +15,13 @@ pub fn compute_barycentric_coefficients<'a, E: JubjubEngine, CS: ConstraintSyste
 
     // Compute A(x_i) * point - x_i
     let mut lagrange_evals = Vec::with_capacity(domain_size);
+    let fs_one = E::Fs::one();
+    // dbg!(fs_one.get_field_value().map(|v| v.into_repr()));
     let mut total_prod =
-        FieldElement::<E, E::Fs>::new_allocated_in_field(cs, Some(E::Fs::one()), rns_params)?;
+        FieldElement::<E, E::Fs>::new_allocated_in_field(cs, Some(fs_one), rns_params)?;
 
     let barycentric_weights = precomputed_weights.get_barycentric_weights();
-    for (i, barycentric_weights_i) in barycentric_weights.iter().enumerate() {
+    for (i, barycentric_weights_i) in barycentric_weights.iter().take(domain_size).enumerate() {
         let weight = FieldElement::<E, E::Fs>::new_allocated_in_field(
             cs,
             Some(*barycentric_weights_i),
@@ -32,10 +34,11 @@ pub fn compute_barycentric_coefficients<'a, E: JubjubEngine, CS: ConstraintSyste
         total_prod = r_elem;
 
         let (tmp_times_weight, (_, _)) = tmp.mul(cs, weight)?; // lagrange_evals[i] = (point - i) * weight
+
+        // dbg!(&tmp_times_weight.get_field_value().map(|v| v.into_repr()));
         let inv_tmp_times_weight = {
             let inv_raw = if let Some(raw) = tmp_times_weight.get_field_value() {
-                let inv_raw = raw;
-                inv_raw.inverse();
+                let inv_raw = raw.inverse().ok_or(SynthesisError::DivisionByZero)?;
 
                 Some(inv_raw)
             } else {
@@ -44,13 +47,16 @@ pub fn compute_barycentric_coefficients<'a, E: JubjubEngine, CS: ConstraintSyste
             let inv_tmp_times_weight =
                 FieldElement::<E, E::Fs>::new_allocated_in_field(cs, inv_raw, rns_params)?;
             let (result, (_, _)) = tmp_times_weight.mul(cs, inv_tmp_times_weight.clone())?;
-            let one = FieldElement::<E, E::Fs>::new_constant(E::Fs::one(), rns_params);
+            let one = FieldElement::<E, E::Fs>::new_constant(fs_one, rns_params);
             let (assertion, (_, _)) = result.sub(cs, one)?;
             assertion.is_zero(cs)?;
 
             inv_tmp_times_weight
         };
 
+        // dbg!(&inv_tmp_times_weight
+        //     .get_field_value()
+        //     .map(|v| v.into_repr()));
         lagrange_evals.push(inv_tmp_times_weight); // lagrange_evals[i] = 1 / ((point - i) * weight)
     }
 

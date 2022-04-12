@@ -12,11 +12,12 @@ use verkle_tree::ipa_fs::config::{Committer, IpaConfig};
 use verkle_tree::ipa_fs::utils::log2_ceil;
 
 use crate::circuit::ipa_fs::config::compute_barycentric_coefficients;
-use crate::circuit::num::baby_ecc::EdwardsPoint;
-use crate::circuit::num::convert_bits_le;
+use crate::circuit::num::{allocate_edwards_point, convert_bits_le};
 
+use super::dummy_transcript::WrappedDummyTranscript as WrappedTranscript;
+// use super::transcript::WrappedTranscript;
 use super::proof::{generate_challenges, OptionIpaProof};
-use super::transcript::{Transcript, WrappedTranscript};
+use super::transcript::Transcript;
 use super::utils::{fold_points, fold_scalars};
 
 #[derive(Clone)]
@@ -74,19 +75,7 @@ where
             FieldElement::new_allocated_in_field(cs, self.eval_point, self.rns_params)?;
         let inner_prod =
             FieldElement::new_allocated_in_field(cs, self.inner_prod, self.rns_params)?;
-        let mut commitment = {
-            let raw = if let Some(c) = &self.commitment {
-                let (x, y) = c.into_xy();
-                (Some(x), Some(y))
-            } else {
-                (None, None)
-            };
-            let x = AllocatedNum::alloc(cs, || raw.0.ok_or(SynthesisError::UnconstrainedVariable))?;
-            let y = AllocatedNum::alloc(cs, || raw.1.ok_or(SynthesisError::UnconstrainedVariable))?;
-
-            EdwardsPoint::interpret(cs, &x, &y, self.jubjub_params)?
-        };
-
+        let mut commitment = allocate_edwards_point(cs, &self.commitment, self.jubjub_params)?;
         dbg!(commitment.get_x().get_value());
         dbg!(commitment.get_y().get_value());
 
@@ -96,7 +85,10 @@ where
             &self.ipa_conf.precomputed_weights,
             &eval_point,
         )?;
-
+        dbg!(b
+            .iter()
+            .map(|b| b.get_field_value().map(|v| v.into_repr()))
+            .collect::<Vec<_>>());
         assert_eq!(
             b.len(),
             self.ipa_conf.srs.len(),
@@ -110,12 +102,7 @@ where
         let w = transcript.get_challenge(cs, self.rns_params)?;
         dbg!(w.get_field_value().map(|v| v.into_repr()));
 
-        let q = {
-            let raw_q = self.ipa_conf.q.into_xy();
-            let q_x = AllocatedNum::alloc(cs, || Ok(raw_q.0))?;
-            let q_y = AllocatedNum::alloc(cs, || Ok(raw_q.1))?;
-            EdwardsPoint::interpret(cs, &q_x, &q_y, self.jubjub_params)?
-        };
+        let q = allocate_edwards_point(cs, &Some(self.ipa_conf.q.clone()), self.jubjub_params)?;
 
         let w_bits = convert_bits_le(cs, w, None)?;
         let qw = q.mul(cs, &w_bits, self.jubjub_params)?;
@@ -147,10 +134,7 @@ where
             let l = wrapped_proof.l[i].clone();
             let r = wrapped_proof.r[i].clone();
 
-            // let mut minus_one = E::Fr::one();
-            // minus_one.negate();
             let x_inv = {
-                // TODO: check zero case
                 let raw_x_inv = x.get_field_value().map(|raw_x| raw_x.inverse().unwrap());
                 let x_inv = FieldElement::new_allocated_in_field(cs, raw_x_inv, self.rns_params)?;
 
@@ -184,12 +168,7 @@ where
             .ipa_conf
             .srs
             .iter()
-            .map(|v| {
-                let raw_v = v.into_xy();
-                let v_x = AllocatedNum::alloc(cs, || Ok(raw_v.0))?;
-                let v_y = AllocatedNum::alloc(cs, || Ok(raw_v.1))?;
-                EdwardsPoint::interpret(cs, &v_x, &v_y, self.jubjub_params)
-            })
+            .map(|v| allocate_edwards_point(cs, &Some(v.clone()), self.jubjub_params))
             .collect::<Result<Vec<_>, SynthesisError>>()?;
 
         println!("reduction starts");
@@ -234,11 +213,11 @@ where
         // Compute `result = G[0] * a + (a * b[0]) * Q`.
         let proof_a = FieldElement::new_allocated_in_field(cs, wrapped_proof.a, self.rns_params)?;
         let mut result1 = current_basis[0].clone(); // result1 = G[0]
-        dbg!(result1.get_x().get_value());
-        dbg!(result1.get_y().get_value());
+        dbg!(current_basis[0].get_x().get_value());
+        dbg!(current_basis[0].get_y().get_value());
 
         let part_2a = b[0].clone(); // part_2a = b[0]
-        dbg!(part_2a.get_field_value().map(|v| v.into_repr()));
+        dbg!(b[0].get_field_value().map(|v| v.into_repr()));
 
         let proof_a_bits = convert_bits_le(cs, proof_a.clone(), None)?;
         result1 = result1.mul(cs, &proof_a_bits, self.jubjub_params)?; // result1 = a[0] * current_basis[0]
@@ -246,9 +225,9 @@ where
         dbg!(result1.get_y().get_value());
 
         let part_2a = {
-            let (tmp, (_, _)) = part_2a.mul(cs, proof_a)?; // part_2a = a[0] * b[0]
+            let (part_2a, (_, _)) = part_2a.mul(cs, proof_a)?; // part_2a = a[0] * b[0]
 
-            tmp
+            part_2a
         };
         dbg!(part_2a.get_field_value().map(|v| v.into_repr()));
 
@@ -258,19 +237,12 @@ where
         dbg!(result2.get_y().get_value());
 
         let result = result1.add(cs, &result2, self.jubjub_params)?; // result = result1 + result2
-
         dbg!(result.get_x().get_value());
         dbg!(result.get_y().get_value());
 
         // Ensure `commitment` is equal to `result`.
-        commitment
-            .get_x()
-            .sub(cs, result.get_x())?
-            .assert_is_zero(cs)?;
-        commitment
-            .get_y()
-            .sub(cs, result.get_y())?
-            .assert_is_zero(cs)?;
+        commitment.get_x().enforce_equal(cs, result.get_x())?;
+        commitment.get_y().enforce_equal(cs, result.get_y())?;
 
         println!(
             "verification check ends: {} s",

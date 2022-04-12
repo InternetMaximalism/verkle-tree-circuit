@@ -21,7 +21,9 @@ pub fn convert_ff_ce_to_ff<E: JubjubEngine>(value: E::Fs) -> anyhow::Result<Bn25
 }
 
 pub trait Transcript<E: JubjubEngine>: Sized + Clone {
-    fn new<CS: ConstraintSystem<E>>(cs: &mut CS, init_state: AllocatedNum<E>) -> Self;
+    type Params;
+
+    fn new<CS: ConstraintSystem<E>>(cs: &mut CS, init_state: Self::Params) -> Self;
     fn commit_field_element<'a, CS: ConstraintSystem<E>>(
         &mut self,
         cs: &mut CS,
@@ -37,7 +39,7 @@ pub trait Transcript<E: JubjubEngine>: Sized + Clone {
         cs: &mut CS,
         rns_params: &'a RnsParameters<E, E::Fs>,
     ) -> Result<FieldElement<'a, E, E::Fs>, SynthesisError>;
-    fn into_params(self) -> AllocatedNum<E>;
+    fn into_params(self) -> Self::Params;
 }
 
 #[derive(Clone)]
@@ -52,6 +54,8 @@ impl<E> Transcript<E> for WrappedTranscript<E>
 where
     E: JubjubEngine,
 {
+    type Params = AllocatedNum<E>;
+
     fn new<CS: ConstraintSystem<E>>(_cs: &mut CS, init_state: AllocatedNum<E>) -> Self {
         Self { state: init_state }
     }

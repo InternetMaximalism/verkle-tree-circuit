@@ -4,8 +4,9 @@ pub mod lookup;
 use franklin_crypto::{
     babyjubjub::{edwards, JubjubEngine},
     bellman::{
-        pairing::ff::Field, plonk::better_better_cs::cs::ConstraintSystem, BitIterator, Engine,
-        PrimeField, SynthesisError,
+        pairing::ff::Field,
+        plonk::better_better_cs::cs::{ArithmeticTerm, ConstraintSystem, MainGateTerm},
+        BitIterator, Engine, PrimeField, SynthesisError,
     },
     plonk::circuit::{
         allocated_num::AllocatedNum,
@@ -94,34 +95,57 @@ where
     E: JubjubEngine,
     CS: ConstraintSystem<E>,
 {
+    let rns_params = value.representation_params;
+
+    let default_bit_length = E::Fs::NUM_BITS as usize;
     let bit_length = if let Some(bit_length) = bit_length {
         assert!(bit_length <= E::Fs::NUM_BITS as usize);
 
         bit_length
     } else {
-        E::Fs::NUM_BITS as usize
+        default_bit_length
     };
 
-    let bits = field_into_allocated_bits_le_fixed(cs, value, bit_length)?;
+    let bits = field_into_allocated_bits_le_fixed(cs, value.clone(), default_bit_length)?;
+    let result = bits
+        .clone()
+        .into_iter()
+        .take(bit_length)
+        .map(Boolean::from)
+        .collect();
 
-    // TODO
-    // let mut minus_one = E::Fs::one();
-    // minus_one.negate();
+    for (bit_chunks, value_limb) in bits
+        .chunks(rns_params.binary_limbs_bit_widths[0])
+        .zip(value.into_limbs())
+    {
+        let mut term = MainGateTerm::new();
+        let value_term = ArithmeticTerm::from_variable(value_limb.into_variable().get_variable());
+        term.sub_assign(value_term);
 
-    // let mut packed_lc = LinearCombination::zero();
-    // packed_lc.add_assign_variable_with_coeff(self, minus_one);
+        let mut coeff = E::Fr::one();
+        let mut lc = AllocatedNum::zero(cs);
+        for bit in bit_chunks {
+            let next_lc = lc.add_constant(cs, coeff)?;
+            lc = AllocatedNum::conditionally_select(cs, &next_lc, &lc, &Boolean::from(*bit))?;
 
-    // let mut coeff = E::Fs::one();
+            coeff.double();
+        }
+
+        let lc_term = ArithmeticTerm::from_variable(lc.get_variable());
+        term.add_assign(lc_term);
+
+        cs.allocate_main_gate(term)?;
+    }
 
     // for bit in bits.iter() {
-    //     packed_lc.add_assign_bit_with_coeff(bit, coeff);
+    //     let mut bit_term = ArithmeticTerm::from_variable(bit.get_variable());
+    //     bit_term.scale(&coeff); // XXX
+    //     term.add_assign(bit_term);
 
     //     coeff.double();
     // }
 
-    // packed_lc.enforce_zero(cs)?;
-
-    Ok(bits.into_iter().map(Boolean::from).collect())
+    Ok(result)
 }
 
 pub fn field_into_allocated_bits_le_fixed<E: Engine, CS: ConstraintSystem<E>, F: PrimeField>(

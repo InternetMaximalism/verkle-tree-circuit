@@ -39,17 +39,11 @@ pub struct IpaCircuitInput {
 
 #[cfg(test)]
 mod ipa_api_tests {
-    use std::{
-        fs::{File, OpenOptions},
-        path::Path,
-    };
+    use std::{fs::OpenOptions, path::Path};
 
     use franklin_crypto::{
         babyjubjub::{JubjubBn256, JubjubEngine},
-        bellman::{
-            kate_commitment::{Crs, CrsForMonomialForm},
-            pairing::bn256::{Bn256, Fr},
-        },
+        bellman::pairing::bn256::{Bn256, Fr},
         plonk::circuit::{
             bigint::field::RnsParameters,
             verifier_circuit::affine_point_wrapper::without_flag_unchecked::WrapperUnchecked,
@@ -64,6 +58,8 @@ mod ipa_api_tests {
             utils::read_field_element_le,
         },
     };
+
+    use crate::api::utils::open_crs_for_log2_of_size;
 
     use super::IpaCircuitInput;
 
@@ -94,94 +90,18 @@ mod ipa_api_tests {
         })
     }
 
-    // #[test]
-    // fn test_ipa_fs_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
-    //     let jubjub_params = &JubjubBn256::new();
-    //     let eval_point = read_field_element_le(&123456789u64.to_le_bytes()).unwrap();
-    //     let domain_size = 2;
-    //     let ipa_conf = &IpaConfig::<Bn256>::new(domain_size, jubjub_params);
-
-    //     // Prover view
-    //     let poly = vec![12, 97];
-    //     // let poly = vec![12, 97, 37, 0, 1, 208, 132, 3];
-    //     let padded_poly = test_poly::<<Bn256 as JubjubEngine>::Fs>(&poly, domain_size);
-    //     let prover_transcript = PoseidonBn256Transcript::with_bytes(b"ipa");
-
-    //     // let output = read_field_element_le_from::<Fr>(&[
-    //     //   251, 230, 185, 64, 12, 136, 124, 164, 37, 71, 120, 65, 234, 225, 30, 7, 157, 148, 169, 225,
-    //     //   186, 183, 76, 63, 231, 241, 40, 189, 50, 55, 145, 23,
-    //     // ])
-    //     // .unwrap();
-    //     let rns_params =
-    //         &RnsParameters::<Bn256, <Bn256 as JubjubEngine>::Fs>::new_for_field(68, 110, 4);
-    //     let circuit_input = make_test_input(
-    //         &padded_poly,
-    //         eval_point,
-    //         prover_transcript.clone().into_params(),
-    //         jubjub_params,
-    //         &ipa_conf,
-    //     )?;
-
-    //     let is_ok = circuit_input.proof.check(
-    //         circuit_input.commitment.clone(),
-    //         eval_point,
-    //         circuit_input.inner_prod,
-    //         prover_transcript.clone().into_params(),
-    //         &ipa_conf,
-    //         jubjub_params,
-    //     )?;
-    //     assert!(is_ok);
-
-    //     let (vk, proof) = circuit_input.create_groth16_proof(
-    //         prover_transcript.into_params(),
-    //         ipa_conf,
-    //         jubjub_params,
-    //         rns_params,
-    //     )?;
-    //     let proof_path = Path::new("./test_cases")
-    //         .join(CIRCUIT_NAME)
-    //         .join("proof_case1");
-    //     let file = OpenOptions::new()
-    //         .write(true)
-    //         .create(true)
-    //         .truncate(true)
-    //         .open(proof_path)?;
-    //     proof.write(file)?;
-    //     let vk_path = Path::new("./test_cases")
-    //         .join(CIRCUIT_NAME)
-    //         .join("vk_case1");
-    //     let file = OpenOptions::new()
-    //         .write(true)
-    //         .create(true)
-    //         .truncate(true)
-    //         .open(vk_path)?;
-    //     vk.write(file)?;
-
-    //     let public_input = vec![]; // TODO
-    //     let prepared_vk = prepare_verifying_key(&vk);
-    //     let success = verify_proof(&prepared_vk, &proof, &public_input)?;
-    //     assert!(success, "verification error");
-
-    //     Ok(())
-    // }
-
-    fn open_crs_for_log2_of_size(_log2_n: usize) -> Crs<Bn256, CrsForMonomialForm> {
-        let full_path = Path::new("./test_cases").join("crs");
-        println!("Opening {}", full_path.to_string_lossy());
-        let file = File::open(&full_path).unwrap();
-        let reader = std::io::BufReader::with_capacity(1 << 24, file);
-        let crs = Crs::<Bn256, CrsForMonomialForm>::read(reader).unwrap();
-        println!("Load {}", full_path.to_string_lossy());
-
-        crs
-    }
-
     #[test]
     fn test_ipa_fs_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
         let crs = open_crs_for_log2_of_size(23);
         let jubjub_params = &JubjubBn256::new();
-        let rns_params =
-            &RnsParameters::<Bn256, <Bn256 as JubjubEngine>::Fs>::new_for_field(68, 110, 4);
+        let mut rns_params =
+            RnsParameters::<Bn256, <Bn256 as JubjubEngine>::Fs>::new_for_field(68, 110, 4);
+        let current_bits = rns_params.binary_limbs_bit_widths.last_mut().unwrap();
+        let remainder = *current_bits % rns_params.range_check_info.minimal_multiple;
+        if remainder != 0 {
+            *current_bits += rns_params.range_check_info.minimal_multiple - remainder;
+        }
+
         let eval_point: <Bn256 as JubjubEngine>::Fs =
             read_field_element_le(&123456789u64.to_le_bytes()).unwrap();
         let domain_size = 2;
@@ -210,7 +130,7 @@ mod ipa_api_tests {
             prover_transcript.into_params(),
             ipa_conf,
             jubjub_params,
-            rns_params,
+            &rns_params,
             crs,
         )?;
         let proof_path = Path::new("./test_cases")
