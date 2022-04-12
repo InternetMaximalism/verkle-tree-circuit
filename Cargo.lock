@@ -1756,6 +1756,7 @@ dependencies = [
  "generic-array 0.14.5",
  "hex",
  "num-bigint 0.3.3",
+ "num-traits",
  "rand 0.4.6",
  "serde",
  "serde_json",

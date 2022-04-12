@@ -1,9 +1,9 @@
 use franklin_crypto::{
+    babyjubjub::JubjubEngine,
     bellman::{
         plonk::commitments::transcript::{Blake2sTranscript, Prng, Transcript},
         ConstraintSystem, SynthesisError,
     },
-    jubjub::JubjubEngine,
 };
 
 use super::transcript::Transcript as TranscriptCircuit;
@@ -13,7 +13,7 @@ pub struct WrappedTranscript<E: JubjubEngine> {
     pub state: Blake2sTranscript<E::Fr>,
 }
 
-impl<E: JubjubEngine> TranscriptCircuit<E> for WrappedTranscript<E> {
+impl<'a, E: JubjubEngine> TranscriptCircuit<'a, E> for WrappedTranscript<E> {
     fn new(_init_state: Option<E::Fr>) -> Self {
         let state = Blake2sTranscript::new();
 
