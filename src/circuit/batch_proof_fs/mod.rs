@@ -7,14 +7,17 @@ use franklin_crypto::bellman::{Field, PrimeField, SynthesisError};
 use franklin_crypto::plonk::circuit::allocated_num::AllocatedNum;
 use franklin_crypto::plonk::circuit::bigint::field::{FieldElement, RnsParameters};
 use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
-use verkle_tree::ipa_fs::config::IpaConfig;
+use verkle_tree::ipa_fs::config::{Committer, IpaConfig};
+use verkle_tree::ipa_fs::utils::log2_ceil;
 
 use crate::circuit::num::baby_ecc::EdwardsPoint;
-use crate::circuit::num::convert_bits_le;
+use crate::circuit::num::{allocate_edwards_point, convert_bits_le};
 
+use super::ipa_fs::dummy_transcript::WrappedDummyTranscript as WrappedTranscript;
+// use super::ipa_fs::transcript::WrappedTranscript;
 use super::ipa_fs::circuit::IpaCircuit;
 use super::ipa_fs::proof::OptionIpaProof;
-use super::ipa_fs::transcript::{Transcript, WrappedTranscript};
+use super::ipa_fs::transcript::Transcript;
 
 pub struct BatchProofCircuit<'a, 'b, 'c, E: JubjubEngine>
 where
@@ -28,7 +31,30 @@ where
     pub zs: Vec<Option<usize>>,
     pub ipa_conf: &'c IpaConfig<'b, E>,
     pub rns_params: &'a RnsParameters<E, E::Fs>,
-    pub jubjub_params: &'a E::Params,
+}
+
+impl<'a, 'b, 'c, E: JubjubEngine> BatchProofCircuit<'a, 'b, 'c, E>
+where
+    'c: 'b,
+{
+    // Initialize variables with None.
+    pub fn initialize(
+        ipa_conf: &'c IpaConfig<'b, E>,
+        rns_params: &'a RnsParameters<E, E::Fs>,
+    ) -> Self {
+        let num_rounds = log2_ceil(ipa_conf.get_domain_size());
+
+        BatchProofCircuit::<E> {
+            transcript_params: None,
+            commitments: vec![None; num_rounds],
+            proof: OptionIpaProof::with_depth(num_rounds),
+            d: None,
+            ys: vec![None; num_rounds],
+            zs: vec![None; num_rounds],
+            ipa_conf,
+            rns_params,
+        }
+    }
 }
 
 impl<'a, 'b, 'c, E: JubjubEngine> Circuit<E> for BatchProofCircuit<'a, 'b, 'c, E> {
@@ -42,6 +68,7 @@ impl<'a, 'b, 'c, E: JubjubEngine> Circuit<E> for BatchProofCircuit<'a, 'b, 'c, E
     }
 
     fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
+        let jubjub_params = self.ipa_conf.jubjub_params;
         let transcript_params = self.transcript_params;
         dbg!(transcript_params);
         let wrapped_transcript_params = AllocatedNum::<E>::alloc(cs, || {
@@ -95,26 +122,8 @@ impl<'a, 'b, 'c, E: JubjubEngine> Circuit<E> for BatchProofCircuit<'a, 'b, 'c, E
 
         let mut allocated_commitment = vec![];
         for i in 0..num_queries {
-            let allocated_commitment_i = {
-                let raw_commitment = if let Some(c) = self.commitments[i].clone() {
-                    let (x, y) = c.into_xy();
-                    (Some(x), Some(y))
-                } else {
-                    (None, None)
-                };
-                let commitment_x = AllocatedNum::alloc(cs, || {
-                    raw_commitment
-                        .0
-                        .ok_or(SynthesisError::UnconstrainedVariable)
-                })?;
-                let commitment_y = AllocatedNum::alloc(cs, || {
-                    raw_commitment
-                        .1
-                        .ok_or(SynthesisError::UnconstrainedVariable)
-                })?;
-
-                EdwardsPoint::interpret(cs, &commitment_x, &commitment_y, self.jubjub_params)?
-            };
+            let allocated_commitment_i =
+                allocate_edwards_point(cs, &self.commitments[i], jubjub_params)?;
 
             transcript.commit_point(cs, &allocated_commitment_i)?; // commitments[i]
             allocated_commitment.push(allocated_commitment_i);
@@ -126,26 +135,7 @@ impl<'a, 'b, 'c, E: JubjubEngine> Circuit<E> for BatchProofCircuit<'a, 'b, 'c, E
 
         let r = transcript.get_challenge(cs, self.rns_params)?;
 
-        let allocated_d = {
-            let raw_commitment = if let Some(d) = self.d.clone() {
-                let (x, y) = d.into_xy();
-                (Some(x), Some(y))
-            } else {
-                (None, None)
-            };
-            let commitment_x = AllocatedNum::alloc(cs, || {
-                raw_commitment
-                    .0
-                    .ok_or(SynthesisError::UnconstrainedVariable)
-            })?;
-            let commitment_y = AllocatedNum::alloc(cs, || {
-                raw_commitment
-                    .1
-                    .ok_or(SynthesisError::UnconstrainedVariable)
-            })?;
-
-            EdwardsPoint::interpret(cs, &commitment_x, &commitment_y, self.jubjub_params)?
-        };
+        let allocated_d = allocate_edwards_point(cs, &self.d, jubjub_params)?;
         transcript.commit_point(cs, &allocated_d)?; // D
         let t = transcript.get_challenge(cs, self.rns_params)?;
 
@@ -154,6 +144,10 @@ impl<'a, 'b, 'c, E: JubjubEngine> Circuit<E> for BatchProofCircuit<'a, 'b, 'c, E
         // There are more optimal ways to do this, but
         // this is more readable, so will leave for now
         let mut helper_scalars = Vec::with_capacity(num_queries);
+        // let mut powers_of_r = FieldElement::new_constant(
+        //     E::Fs::from_repr(<E::Fs as PrimeField>::Repr::from(1u64)).unwrap(),
+        //     self.rns_params,
+        // ); // powers_of_r = 1
         let mut powers_of_r = FieldElement::new_constant(E::Fs::one(), self.rns_params); // powers_of_r = 1
         for zi in zs {
             // helper_scalars[i] = r^i / (t - z_i)
@@ -190,38 +184,29 @@ impl<'a, 'b, 'c, E: JubjubEngine> Circuit<E> for BatchProofCircuit<'a, 'b, 'c, E
         assert!(!self.commitments.is_empty(), "`e` must be non-zero.");
         let mut e = {
             let helper_scalars_i_bits = convert_bits_le(cs, helper_scalars[0].clone(), None)?;
-            allocated_commitment[0].mul(cs, &helper_scalars_i_bits, self.jubjub_params)?
+            allocated_commitment[0].mul(cs, &helper_scalars_i_bits, jubjub_params)?
         };
         for (i, helper_scalars_i) in helper_scalars.iter().enumerate().skip(1) {
             let helper_scalars_i_bits = convert_bits_le(cs, helper_scalars_i.clone(), None)?;
-            let tmp =
-                allocated_commitment[i].mul(cs, &helper_scalars_i_bits, self.jubjub_params)?;
-            e = e.add(cs, &tmp, self.jubjub_params)?;
+            let tmp = allocated_commitment[i].mul(cs, &helper_scalars_i_bits, jubjub_params)?;
+            e = e.add(cs, &tmp, jubjub_params)?;
         }
 
         transcript.commit_point(cs, &e)?; // E
 
         let minus_d = {
-            let (minus_d_x, d_y) = if let Some(d) = self.d.clone() {
-                let (mut d_x, d_y) = d.into_xy();
-                d_x.negate();
+            let d_x = allocated_d.get_x();
+            let d_y = allocated_d.get_y();
+            let zero = AllocatedNum::zero(cs);
+            let minus_d_x = zero.sub(cs, d_x)?;
 
-                (Some(d_x), Some(d_y))
-            } else {
-                (None, None)
-            };
-            let minus_d_x = AllocatedNum::alloc(cs, || {
-                minus_d_x.ok_or(SynthesisError::UnconstrainedVariable)
-            })?;
-            let d_y = AllocatedNum::alloc(cs, || d_y.ok_or(SynthesisError::UnconstrainedVariable))?;
-
-            EdwardsPoint::interpret(cs, &minus_d_x, &d_y, self.jubjub_params)?
+            EdwardsPoint::interpret(cs, &minus_d_x, d_y, jubjub_params)?
         };
-        let e_minus_d = e.add(cs, &minus_d, self.jubjub_params)?;
+        let e_minus_d = e.add(cs, &minus_d, jubjub_params)?;
         let ipa_commitment = if let (Some(x), Some(y)) =
             (e_minus_d.get_x().get_value(), e_minus_d.get_y().get_value())
         {
-            edwards::Point::get_for_y(y, x.into_repr().is_odd(), self.jubjub_params)
+            edwards::Point::get_for_y(y, x.into_repr().is_odd(), jubjub_params)
         } else {
             None
         };
@@ -233,7 +218,6 @@ impl<'a, 'b, 'c, E: JubjubEngine> Circuit<E> for BatchProofCircuit<'a, 'b, 'c, E
             eval_point: t.get_field_value(),
             inner_prod: g_2_t.get_field_value(),
             ipa_conf: self.ipa_conf,
-            jubjub_params: self.jubjub_params,
             rns_params: self.rns_params,
             transcript_params,
         };

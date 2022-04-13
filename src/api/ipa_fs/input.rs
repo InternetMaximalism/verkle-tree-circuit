@@ -43,7 +43,13 @@ mod ipa_api_tests {
 
     use franklin_crypto::{
         babyjubjub::{JubjubBn256, JubjubEngine},
-        bellman::pairing::bn256::{Bn256, Fr},
+        bellman::{
+            pairing::bn256::{Bn256, Fr},
+            plonk::{
+                better_better_cs::verifier::verify,
+                commitments::transcript::keccak_transcript::RollingKeccakTranscript,
+            },
+        },
         plonk::circuit::{
             bigint::field::RnsParameters,
             verifier_circuit::affine_point_wrapper::without_flag_unchecked::WrapperUnchecked,
@@ -69,7 +75,6 @@ mod ipa_api_tests {
         poly: &[<Bn256 as JubjubEngine>::Fs],
         eval_point: <Bn256 as JubjubEngine>::Fs,
         transcript_params: Fr,
-        jubjub_params: &JubjubBn256,
         ipa_conf: &IpaConfig<Bn256>,
     ) -> anyhow::Result<IpaCircuitInput> {
         let commitment = ipa_conf.commit(poly).unwrap();
@@ -79,7 +84,6 @@ mod ipa_api_tests {
             eval_point,
             transcript_params,
             ipa_conf,
-            jubjub_params,
         )?;
 
         Ok(IpaCircuitInput {
@@ -122,17 +126,19 @@ mod ipa_api_tests {
             &padded_poly,
             eval_point,
             prover_transcript.clone().into_params(),
-            jubjub_params,
             ipa_conf,
         )?;
 
         let (vk, proof) = circuit_input.create_plonk_proof::<WrapperUnchecked<'_, Bn256>>(
             prover_transcript.into_params(),
             ipa_conf,
-            jubjub_params,
             &rns_params,
             crs,
         )?;
+        let is_valid = verify::<_, _, RollingKeccakTranscript<Fr>>(&vk, &proof, None)
+            .expect("must perform verification");
+        assert!(is_valid);
+
         let proof_path = Path::new("./test_cases")
             .join(CIRCUIT_NAME)
             .join("proof_case1");
@@ -234,6 +240,26 @@ impl IpaCircuitInput {
         }
     }
 
+    pub fn make_circuit_for_proving<'a, 'b, 'c>(
+        &self,
+        transcript_params: Fr,
+        ipa_conf: &'c IpaConfig<'b, Bn256>,
+        rns_params: &'a RnsParameters<Bn256, <Bn256 as JubjubEngine>::Fs>,
+    ) -> IpaCircuit<'a, 'b, 'c, Bn256>
+    where
+        'c: 'b,
+    {
+        IpaCircuit::<Bn256> {
+            transcript_params: Some(transcript_params),
+            commitment: Some(self.commitment.clone()),
+            proof: OptionIpaProof::from(self.proof.clone()),
+            eval_point: Some(self.eval_point),
+            inner_prod: Some(self.inner_prod),
+            ipa_conf,
+            rns_params,
+        }
+    }
+
     // pub fn create_groth16_proof(
     //     &self,
     //     transcript_params: Fr,
@@ -309,7 +335,6 @@ impl IpaCircuitInput {
         &self,
         transcript_params: Fr,
         ipa_conf: &IpaConfig<Bn256>,
-        jubjub_params: &JubjubBn256,
         rns_params: &'a RnsParameters<Bn256, <Bn256 as JubjubEngine>::Fs>,
         crs: Crs<Bn256, CrsForMonomialForm>,
     ) -> Result<
@@ -319,16 +344,17 @@ impl IpaCircuitInput {
         ),
         SynthesisError,
     > {
-        let dummy_circuit = IpaCircuit::<Bn256> {
-            transcript_params: None,
-            commitment: None,
-            proof: OptionIpaProof::from(self.proof.clone()),
-            eval_point: None,
-            inner_prod: None,
-            ipa_conf,
-            jubjub_params,
-            rns_params,
-        };
+        let dummy_circuit = IpaCircuit::<Bn256>::initialize(ipa_conf, rns_params);
+        // let dummy_circuit = {
+        //     transcript_params: None,
+        //     commitment: None,
+        //     proof: OptionIpaProof::from(self.proof.clone()),
+        //     eval_point: None,
+        //     inner_prod: None,
+        //     ipa_conf,
+        //     jubjub_params,
+        //     rns_params,
+        // };
 
         let mut dummy_assembly =
             SetupAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
@@ -346,16 +372,17 @@ impl IpaCircuitInput {
 
         let vk = VerificationKey::<Bn256, IpaCircuit<Bn256>>::from_setup(&setup, &worker, &crs)?;
 
-        let circuit = IpaCircuit::<Bn256> {
-            transcript_params: Some(transcript_params),
-            commitment: Some(self.commitment.clone()),
-            proof: OptionIpaProof::from(self.proof.clone()),
-            eval_point: Some(self.eval_point),
-            inner_prod: Some(self.inner_prod),
-            ipa_conf,
-            jubjub_params,
-            rns_params,
-        };
+        let circuit = self.make_circuit_for_proving(transcript_params, ipa_conf, rns_params);
+        // let circuit = IpaCircuit::<Bn256> {
+        //     transcript_params: Some(transcript_params),
+        //     commitment: Some(self.commitment.clone()),
+        //     proof: OptionIpaProof::from(self.proof.clone()),
+        //     eval_point: Some(self.eval_point),
+        //     inner_prod: Some(self.inner_prod),
+        //     ipa_conf,
+        //     jubjub_params,
+        //     rns_params,
+        // };
 
         let mut assembly =
             ProvingAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();

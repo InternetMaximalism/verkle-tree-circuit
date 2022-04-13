@@ -32,7 +32,28 @@ where
     pub inner_prod: Option<E::Fs>,
     pub ipa_conf: &'c IpaConfig<'b, E>,
     pub rns_params: &'a RnsParameters<E, <E as JubjubEngine>::Fs>,
-    pub jubjub_params: &'a E::Params,
+}
+
+impl<'a, 'b, 'c, E: JubjubEngine> IpaCircuit<'a, 'b, 'c, E>
+where
+    'c: 'b,
+{
+    pub fn initialize(
+        ipa_conf: &'c IpaConfig<'b, E>,
+        rns_params: &'a RnsParameters<E, E::Fs>,
+    ) -> IpaCircuit<'a, 'b, 'c, E> {
+        let num_rounds = log2_ceil(ipa_conf.get_domain_size());
+
+        IpaCircuit::<E> {
+            transcript_params: None,
+            commitment: None,
+            proof: OptionIpaProof::with_depth(num_rounds),
+            eval_point: None,
+            inner_prod: None,
+            ipa_conf,
+            rns_params,
+        }
+    }
 }
 
 impl<'a, 'b, 'c, E: JubjubEngine> Circuit<E> for IpaCircuit<'a, 'b, 'c, E>
@@ -49,6 +70,7 @@ where
     }
 
     fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
+        let jubjub_params = self.ipa_conf.jubjub_params;
         let transcript_params = self.transcript_params;
         dbg!(transcript_params);
         let wrapped_transcript_params = AllocatedNum::<E>::alloc(cs, || {
@@ -75,7 +97,7 @@ where
             FieldElement::new_allocated_in_field(cs, self.eval_point, self.rns_params)?;
         let inner_prod =
             FieldElement::new_allocated_in_field(cs, self.inner_prod, self.rns_params)?;
-        let mut commitment = allocate_edwards_point(cs, &self.commitment, self.jubjub_params)?;
+        let mut commitment = allocate_edwards_point(cs, &self.commitment, jubjub_params)?;
         dbg!(commitment.get_x().get_value());
         dbg!(commitment.get_y().get_value());
 
@@ -102,17 +124,17 @@ where
         let w = transcript.get_challenge(cs, self.rns_params)?;
         dbg!(w.get_field_value().map(|v| v.into_repr()));
 
-        let q = allocate_edwards_point(cs, &Some(self.ipa_conf.q.clone()), self.jubjub_params)?;
+        let q = allocate_edwards_point(cs, &Some(self.ipa_conf.q.clone()), jubjub_params)?;
 
         let w_bits = convert_bits_le(cs, w, None)?;
-        let qw = q.mul(cs, &w_bits, self.jubjub_params)?;
+        let qw = q.mul(cs, &w_bits, jubjub_params)?;
         dbg!(qw.get_x().get_value());
         dbg!(qw.get_y().get_value());
         let inner_prod_bits = convert_bits_le(cs, inner_prod, None)?;
-        let qy = qw.mul(cs, &inner_prod_bits, self.jubjub_params)?;
+        let qy = qw.mul(cs, &inner_prod_bits, jubjub_params)?;
         dbg!(qy.get_x().get_value());
         dbg!(qy.get_y().get_value());
-        commitment = commitment.add(cs, &qy, self.jubjub_params)?;
+        commitment = commitment.add(cs, &qy, jubjub_params)?;
         dbg!(commitment.get_x().get_value());
         dbg!(commitment.get_y().get_value());
 
@@ -120,7 +142,7 @@ where
             cs,
             &self.proof.clone(),
             &mut transcript,
-            self.jubjub_params,
+            jubjub_params,
             self.rns_params,
         )
         .unwrap();
@@ -142,22 +164,15 @@ where
             };
             challenges_inv.push(x_inv.clone());
 
-            // let one = E::Fs::one();
             let x_bits = convert_bits_le(cs, x.clone(), None)?;
-            let commitment_l = l.mul(cs, &x_bits, self.jubjub_params)?;
+            let commitment_l = l.mul(cs, &x_bits, jubjub_params)?;
             let x_inv_bits = convert_bits_le(cs, x_inv, None)?;
-            let commitment_r = r.mul(cs, &x_inv_bits, self.jubjub_params)?;
-            commitment = commitment.add(cs, &commitment_l, self.jubjub_params)?.add(
+            let commitment_r = r.mul(cs, &x_inv_bits, jubjub_params)?;
+            commitment = commitment.add(cs, &commitment_l, jubjub_params)?.add(
                 cs,
                 &commitment_r,
-                self.jubjub_params,
+                jubjub_params,
             )?;
-            // commitment = commit(
-            //     &mut cs.namespace(|| "commit"),
-            //     &[commitment, l, r],
-            //     &[Some(one), x.clone(), x_inv],
-            //     self.jubjub_params,
-            // )?;
             dbg!(commitment.get_x().get_value());
             dbg!(commitment.get_y().get_value());
         }
@@ -168,7 +183,7 @@ where
             .ipa_conf
             .srs
             .iter()
-            .map(|v| allocate_edwards_point(cs, &Some(v.clone()), self.jubjub_params))
+            .map(|v| allocate_edwards_point(cs, &Some(v.clone()), jubjub_params))
             .collect::<Result<Vec<_>, SynthesisError>>()?;
 
         println!("reduction starts");
@@ -191,7 +206,7 @@ where
 
             dbg!(x_inv.get_field_value().map(|v| v.into_repr()));
             b = fold_scalars(cs, &b_l, &b_r, x_inv).unwrap();
-            current_basis = fold_points::<E, CS>(cs, &g_l, &g_r, x_inv, self.jubjub_params)?;
+            current_basis = fold_points::<E, CS>(cs, &g_l, &g_r, x_inv, jubjub_params)?;
         }
 
         println!("x_inv: {}/{}", challenges_inv.len(), challenges_inv.len());
@@ -220,7 +235,7 @@ where
         dbg!(b[0].get_field_value().map(|v| v.into_repr()));
 
         let proof_a_bits = convert_bits_le(cs, proof_a.clone(), None)?;
-        result1 = result1.mul(cs, &proof_a_bits, self.jubjub_params)?; // result1 = a[0] * current_basis[0]
+        result1 = result1.mul(cs, &proof_a_bits, jubjub_params)?; // result1 = a[0] * current_basis[0]
         dbg!(result1.get_x().get_value());
         dbg!(result1.get_y().get_value());
 
@@ -232,11 +247,11 @@ where
         dbg!(part_2a.get_field_value().map(|v| v.into_repr()));
 
         let part_2a_bits = convert_bits_le(cs, part_2a, None)?;
-        let result2 = qw.mul(cs, &part_2a_bits, self.jubjub_params)?; // result2 = a[0] * b[0] * w * Q
+        let result2 = qw.mul(cs, &part_2a_bits, jubjub_params)?; // result2 = a[0] * b[0] * w * Q
         dbg!(result2.get_x().get_value());
         dbg!(result2.get_y().get_value());
 
-        let result = result1.add(cs, &result2, self.jubjub_params)?; // result = result1 + result2
+        let result = result1.add(cs, &result2, jubjub_params)?; // result = result1 + result2
         dbg!(result.get_x().get_value());
         dbg!(result.get_y().get_value());
 
