@@ -86,7 +86,6 @@ mod batch_proof_fs_api_tests {
             .map(|poly| ipa_conf.commit(poly))
             .collect::<Result<Vec<_>, _>>()?;
 
-        dbg!(commitments.len());
         let (proof, ys) = BatchProof::<Bn256>::create(
             &commitments,
             poly_list,
@@ -123,7 +122,7 @@ mod batch_proof_fs_api_tests {
         let poly = vec![12, 97];
         // let poly = vec![12, 97, 37, 0, 1, 208, 132, 3];
         let padded_poly = test_poly::<<Bn256 as JubjubEngine>::Fs>(&poly, domain_size);
-        let prover_transcript = PoseidonBn256Transcript::with_bytes(b"ipa");
+        let prover_transcript = PoseidonBn256Transcript::with_bytes(b"batch_proof");
 
         // let output = read_field_element_le_from::<Fr>(&[
         //   251, 230, 185, 64, 12, 136, 124, 164, 37, 71, 120, 65, 234, 225, 30, 7, 157, 148, 169, 225,
@@ -137,18 +136,20 @@ mod batch_proof_fs_api_tests {
             ipa_conf,
         )?;
 
+        let verifier_transcript = PoseidonBn256Transcript::with_bytes(b"batch_proof");
+
         let is_ok = circuit_input.proof.check(
             &circuit_input.commitments,
             &circuit_input.ys,
             &circuit_input.zs,
-            prover_transcript.clone().into_params(),
+            verifier_transcript.clone().into_params(),
             &ipa_conf,
         )?;
         assert!(is_ok);
 
         let (vk, proof) = circuit_input
             .create_plonk_proof::<WrapperUnchecked<Bn256>>(
-                prover_transcript.into_params(),
+                verifier_transcript.into_params(),
                 ipa_conf,
                 &rns_params,
                 crs,
@@ -176,6 +177,81 @@ mod batch_proof_fs_api_tests {
             .truncate(true)
             .open(vk_path)?;
         vk.write(file)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_batch_proof_fs_circuit_case2() -> Result<(), Box<dyn std::error::Error>> {
+        let crs = open_crs_for_log2_of_size(23);
+        let jubjub_params = &JubjubBn256::new();
+        let mut rns_params =
+            RnsParameters::<Bn256, <Bn256 as JubjubEngine>::Fs>::new_for_field(68, 110, 4); // TODO: Is this correct?
+        let current_bits = rns_params.binary_limbs_bit_widths.last_mut().unwrap();
+        let remainder = *current_bits % rns_params.range_check_info.minimal_multiple;
+        if remainder != 0 {
+            *current_bits += rns_params.range_check_info.minimal_multiple - remainder;
+        }
+
+        let eval_points = vec![1, 0];
+        let domain_size = 4;
+        let ipa_conf = &IpaConfig::<Bn256>::new(domain_size, jubjub_params);
+
+        // Prover view
+        let poly1 = vec![12, 97];
+        let poly2 = vec![103, 29];
+        let padded_poly1 = test_poly::<<Bn256 as JubjubEngine>::Fs>(&poly1, domain_size);
+        let padded_poly2 = test_poly::<<Bn256 as JubjubEngine>::Fs>(&poly2, domain_size);
+        let prover_transcript = PoseidonBn256Transcript::with_bytes(b"batch_proof");
+
+        let circuit_input = make_test_input(
+            &[padded_poly1, padded_poly2],
+            &eval_points,
+            prover_transcript.clone().into_params(),
+            ipa_conf,
+        )?;
+
+        let verifier_transcript = PoseidonBn256Transcript::with_bytes(b"batch_proof");
+
+        // let is_ok = circuit_input.proof.check(
+        //     &circuit_input.commitments,
+        //     &circuit_input.ys,
+        //     &circuit_input.zs,
+        //     verifier_transcript.clone().into_params(),
+        //     &ipa_conf,
+        // )?;
+        // assert!(is_ok);
+
+        let (vk, proof) = circuit_input
+            .create_plonk_proof::<WrapperUnchecked<Bn256>>(
+                verifier_transcript.into_params(),
+                ipa_conf,
+                &rns_params,
+                crs,
+            )
+            .expect("fail to create PlonK proof");
+        let is_valid = verify::<_, _, RollingKeccakTranscript<Fr>>(&vk, &proof, None)
+            .expect("must perform verification");
+        assert!(is_valid);
+
+        // let proof_path = Path::new("./test_cases")
+        //     .join(CIRCUIT_NAME)
+        //     .join("proof_case2");
+        // let file = OpenOptions::new()
+        //     .write(true)
+        //     .create(true)
+        //     .truncate(true)
+        //     .open(proof_path)?;
+        // proof.write(file)?;
+        // let vk_path = Path::new("./test_cases")
+        //     .join(CIRCUIT_NAME)
+        //     .join("vk_case2");
+        // let file = OpenOptions::new()
+        //     .write(true)
+        //     .create(true)
+        //     .truncate(true)
+        //     .open(vk_path)?;
+        // vk.write(file)?;
 
         Ok(())
     }
@@ -397,13 +473,14 @@ impl BatchProofCircuitInput {
         ),
         SynthesisError,
     > {
-        let dummy_circuit = BatchProofCircuit::<Bn256>::initialize(ipa_conf, rns_params);
+        let circuit = self.make_circuit_for_proving(transcript_params, ipa_conf, rns_params);
+        let _dummy_circuit = BatchProofCircuit::<Bn256>::initialize(ipa_conf, rns_params);
 
         let mut dummy_assembly =
             SetupAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
-        dummy_circuit
+        circuit
             .synthesize(&mut dummy_assembly)
-            .expect("must synthesize");
+            .expect("must synthesize dummy circuit"); // TODO: use `dummy_circuit` instead of `circuit`
         dummy_assembly.finalize();
 
         // println!("Checking if satisfied");
@@ -411,31 +488,44 @@ impl BatchProofCircuitInput {
         // assert!(is_satisfied, "unsatisfied constraints");
 
         let worker = franklin_crypto::bellman::worker::Worker::new();
-        let setup = dummy_assembly.create_setup::<BatchProofCircuit<Bn256>>(&worker)?;
+
+        let start = std::time::Instant::now();
+
+        let setup = dummy_assembly
+            .create_setup::<BatchProofCircuit<Bn256>>(&worker)
+            .unwrap();
+
+        println!(
+            "reduction ends: {} s",
+            start.elapsed().as_millis() as f64 / 1000.0
+        );
 
         let vk =
-            VerificationKey::<Bn256, BatchProofCircuit<Bn256>>::from_setup(&setup, &worker, &crs)?;
-
-        let circuit = self.make_circuit_for_proving(transcript_params, ipa_conf, rns_params);
+            VerificationKey::<Bn256, BatchProofCircuit<Bn256>>::from_setup(&setup, &worker, &crs)
+                .unwrap();
 
         let mut assembly =
             ProvingAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
-        circuit.synthesize(&mut assembly).expect("must synthesize");
+        circuit
+            .synthesize(&mut assembly)
+            .expect("must synthesize circuit");
         assembly.finalize();
 
         println!("prove");
 
+        let start = std::time::Instant::now();
+
         let proof = assembly
             .create_proof::<BatchProofCircuit<Bn256>, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(
                 &worker, &setup, &crs, None,
-            )?;
-        dbg!(&proof.inputs);
+            ).expect("fail to create proof");
 
-        // assert_eq!(
-        //     proof.inputs,
-        //     vec![self.output],
-        //     "expected input is not equal to one in a circuit"
-        // );
+        println!(
+            "reduction ends: {} s",
+            start.elapsed().as_millis() as f64 / 1000.0
+        );
+
+        dbg!(&proof.inputs);
 
         let result = (vk, proof);
 

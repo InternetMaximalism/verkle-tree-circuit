@@ -125,16 +125,27 @@ mod ipa_api_tests {
         let circuit_input = make_test_input(
             &padded_poly,
             eval_point,
-            prover_transcript.clone().into_params(),
+            prover_transcript.into_params(),
             ipa_conf,
         )?;
 
+        let verifier_transcript = PoseidonBn256Transcript::with_bytes(b"ipa");
+        // let is_ok = circuit_input.proof.check(
+        //     circuit_input.commitment.clone(),
+        //     circuit_input.eval_point,
+        //     circuit_input.inner_prod,
+        //     verifier_transcript.clone().into_params(),
+        //     &ipa_conf,
+        // )?;
+        // assert!(is_ok);
+
         let (vk, proof) = circuit_input.create_plonk_proof::<WrapperUnchecked<'_, Bn256>>(
-            prover_transcript.into_params(),
+            verifier_transcript.into_params(),
             ipa_conf,
             &rns_params,
             crs,
         )?;
+
         let is_valid = verify::<_, _, RollingKeccakTranscript<Fr>>(&vk, &proof, None)
             .expect("must perform verification");
         assert!(is_valid);

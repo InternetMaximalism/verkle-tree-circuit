@@ -4,9 +4,8 @@ pub mod lookup;
 use franklin_crypto::{
     babyjubjub::{edwards, JubjubEngine},
     bellman::{
-        pairing::ff::Field,
-        plonk::better_better_cs::cs::{ArithmeticTerm, ConstraintSystem, MainGateTerm},
-        BitIterator, Engine, PrimeField, SynthesisError,
+        pairing::ff::Field, plonk::better_better_cs::cs::ConstraintSystem, BitIterator, Engine,
+        PrimeField, SynthesisError,
     },
     plonk::circuit::{
         allocated_num::AllocatedNum,
@@ -95,7 +94,7 @@ where
     E: JubjubEngine,
     CS: ConstraintSystem<E>,
 {
-    let rns_params = value.representation_params;
+    // let rns_params = value.representation_params;
 
     let default_bit_length = E::Fs::NUM_BITS as usize;
     let bit_length = if let Some(bit_length) = bit_length {
@@ -114,36 +113,30 @@ where
         .map(Boolean::from)
         .collect();
 
-    for (bit_chunks, value_limb) in bits
-        .chunks(rns_params.binary_limbs_bit_widths[0])
-        .zip(value.into_limbs())
-    {
-        let mut term = MainGateTerm::new();
-        let value_term = ArithmeticTerm::from_variable(value_limb.into_variable().get_variable());
-        term.sub_assign(value_term);
+    // TODO: too many constraints
+    // let mut lc = AllocatedNum::zero(cs);
+    // let mut value_lc = AllocatedNum::zero(cs);
 
-        let mut coeff = E::Fr::one();
-        let mut lc = AllocatedNum::zero(cs);
-        for bit in bit_chunks {
-            let next_lc = lc.add_constant(cs, coeff)?;
-            lc = AllocatedNum::conditionally_select(cs, &next_lc, &lc, &Boolean::from(*bit))?;
-
-            coeff.double();
-        }
-
-        let lc_term = ArithmeticTerm::from_variable(lc.get_variable());
-        term.add_assign(lc_term);
-
-        cs.allocate_main_gate(term)?;
-    }
-
+    // let mut coeff = E::Fr::one();
     // for bit in bits.iter() {
-    //     let mut bit_term = ArithmeticTerm::from_variable(bit.get_variable());
-    //     bit_term.scale(&coeff); // XXX
-    //     term.add_assign(bit_term);
+    //     let next_lc = lc.add_constant(cs, coeff)?;
+    //     lc = AllocatedNum::conditionally_select(cs, &next_lc, &lc, &Boolean::from(*bit))?;
 
     //     coeff.double();
     // }
+
+    // let mut coeff = E::Fr::one();
+    // let mut coeff_multiplication =
+    //     biguint_to_fe::<E::Fr>(rns_params.binary_limbs_max_values[0].clone());
+    // coeff_multiplication.add_assign(&E::Fr::one());
+    // for value_limb in value.into_limbs() {
+    //     let next_diff = value_limb.into_variable().mul_constant(cs, coeff)?;
+    //     value_lc = value_lc.sub(cs, &next_diff)?;
+
+    //     coeff.mul_assign(&coeff_multiplication);
+    // }
+
+    // lc.enforce_equal(cs, &value_lc)?;
 
     Ok(result)
 }

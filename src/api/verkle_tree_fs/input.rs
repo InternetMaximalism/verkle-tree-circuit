@@ -18,7 +18,6 @@ mod batch_proof_api_tests {
         },
     };
     use verkle_tree::{
-        batch_proof_fs::BatchProof,
         bn256_verkle_tree_fs::{proof::VerkleProof, VerkleTreeWith32BytesKeyValue},
         ipa_fs::{
             config::IpaConfig,
@@ -32,29 +31,6 @@ mod batch_proof_api_tests {
     };
 
     const CIRCUIT_NAME: &str = "verkle_tree_fs";
-
-    fn make_test_input(
-        tree: &mut VerkleTreeWith32BytesKeyValue,
-        keys: &[[u8; 32]],
-        transcript_params: Fr,
-        ipa_conf: &IpaConfig<Bn256>,
-    ) -> anyhow::Result<BatchProofCircuitInput> {
-        tree.compute_digest().unwrap();
-
-        let (proof, elements) = VerkleProof::create(tree, keys).unwrap();
-
-        let commitments = proof.commitments;
-        let Elements { fs, zs, ys } = elements;
-        let (proof, _) =
-            BatchProof::<Bn256>::create(&commitments, &fs, &zs, transcript_params, ipa_conf)?;
-
-        Ok(BatchProofCircuitInput {
-            proof,
-            commitments,
-            zs,
-            ys,
-        })
-    }
 
     #[test]
     fn test_verkle_proof_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
@@ -73,18 +49,24 @@ mod batch_proof_api_tests {
 
         // Prover view
         let mut tree = VerkleTreeWith32BytesKeyValue::new(ipa_conf);
-        let mut key = [0u8; 32];
-        key[0] = 1;
-        let mut value = [0u8; 32];
-        value[0] = 27;
-        tree.insert(key, value);
-        let mut key = [0u8; 32];
-        key[0] = 1;
-        key[1] = 3;
-        let mut value = [0u8; 32];
-        value[0] = 85;
-        tree.insert(key, value);
-        let keys = [key];
+        let mut key1 = [0u8; 32];
+        key1[0] = 2;
+        key1[1] = 2;
+        key1[30] = 3;
+        key1[31] = 3;
+        let mut value1 = [0u8; 32];
+        value1[0] = 3;
+        value1[15] = 2;
+        value1[16] = 2;
+        value1[31] = 3;
+        tree.insert(key1, value1);
+        let mut key2 = [0u8; 32];
+        key2[0] = 1;
+        key2[1] = 3;
+        let mut value2 = [0u8; 32];
+        value2[0] = 2;
+        tree.insert(key2, value2);
+        let keys = [key1];
         let prover_transcript = PoseidonBn256Transcript::with_bytes(b"verkle_tree");
 
         // let output = read_field_element_le_from::<Fr>(&[
@@ -92,26 +74,23 @@ mod batch_proof_api_tests {
         //   186, 183, 76, 63, 231, 241, 40, 189, 50, 55, 145, 23,
         // ])
         // .unwrap();
-        let circuit_input = make_test_input(
-            &mut tree,
-            &keys,
-            prover_transcript.clone().into_params(),
-            ipa_conf,
-        )?;
+        tree.compute_digest().unwrap();
 
-        // let is_ok = circuit_input.proof.check(
-        //     &circuit_input.commitments,
-        //     &circuit_input.ys,
-        //     &circuit_input.zs,
-        //     prover_transcript.clone().into_params(),
-        //     &ipa_conf,
-        //     jubjub_params,
-        // )?;
-        // assert!(is_ok);
+        let (verkle_proof, Elements { zs, ys, .. }) =
+            VerkleProof::create(&mut tree, &keys, prover_transcript.clone().into_params()).unwrap();
+
+        let circuit_input = BatchProofCircuitInput {
+            commitments: verkle_proof.commitments,
+            proof: verkle_proof.multi_proof,
+            zs,
+            ys,
+        };
+
+        let verifier_transcript = PoseidonBn256Transcript::with_bytes(b"verkle_tree");
 
         let (vk, proof) = circuit_input
             .create_plonk_proof::<WrapperUnchecked<Bn256>>(
-                prover_transcript.into_params(),
+                verifier_transcript.into_params(),
                 ipa_conf,
                 &rns_params,
                 crs,
