@@ -52,7 +52,7 @@ impl<'a, E: JubjubEngine, AD: AuxData<E>> DiscreteLogCircuit<'a, E, AD> {
 
         let wrapped_coefficient_bits = coefficient_bits
             .iter()
-            .map(|v| AllocatedBit::alloc(cs, *v).and_then(|v| Ok(Boolean::from(v))))
+            .map(|v| AllocatedBit::alloc(cs, *v).map(Boolean::from))
             .collect::<Result<Vec<Boolean>, SynthesisError>>()?;
 
         let wrapped_output =

@@ -130,7 +130,7 @@ mod poseidon_fs_api_tests {
     #[test]
     fn test_fs_poseidon_circuit_case1() -> Result<(), Box<dyn std::error::Error>> {
         // let crs = plonkit::plonk::gen_key_monomial_form(power)?;
-        let crs = open_crs_for_log2_of_size(12);
+        let crs = open_crs_for_log2_of_size(14);
         let input1 = read_field_element_le::<Fr>(&[1]).unwrap();
         let input2 = read_field_element_le::<Fr>(&[2]).unwrap();
         let inputs = vec![input1, input2];

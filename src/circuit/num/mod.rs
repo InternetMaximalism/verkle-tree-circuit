@@ -94,34 +94,51 @@ where
     E: JubjubEngine,
     CS: ConstraintSystem<E>,
 {
+    // let rns_params = value.representation_params;
+
+    let default_bit_length = E::Fs::NUM_BITS as usize;
     let bit_length = if let Some(bit_length) = bit_length {
         assert!(bit_length <= E::Fs::NUM_BITS as usize);
 
         bit_length
     } else {
-        E::Fs::NUM_BITS as usize
+        default_bit_length
     };
 
-    let bits = field_into_allocated_bits_le_fixed(cs, value, bit_length)?;
+    let bits = field_into_allocated_bits_le_fixed(cs, value.clone(), default_bit_length)?;
+    let result = bits
+        .clone()
+        .into_iter()
+        .take(bit_length)
+        .map(Boolean::from)
+        .collect();
 
-    // TODO
-    // let mut minus_one = E::Fs::one();
-    // minus_one.negate();
+    // TODO: too many constraints
+    // let mut lc = AllocatedNum::zero(cs);
+    // let mut value_lc = AllocatedNum::zero(cs);
 
-    // let mut packed_lc = LinearCombination::zero();
-    // packed_lc.add_assign_variable_with_coeff(self, minus_one);
-
-    // let mut coeff = E::Fs::one();
-
+    // let mut coeff = E::Fr::one();
     // for bit in bits.iter() {
-    //     packed_lc.add_assign_bit_with_coeff(bit, coeff);
+    //     let next_lc = lc.add_constant(cs, coeff)?;
+    //     lc = AllocatedNum::conditionally_select(cs, &next_lc, &lc, &Boolean::from(*bit))?;
 
     //     coeff.double();
     // }
 
-    // packed_lc.enforce_zero(cs)?;
+    // let mut coeff = E::Fr::one();
+    // let mut coeff_multiplication =
+    //     biguint_to_fe::<E::Fr>(rns_params.binary_limbs_max_values[0].clone());
+    // coeff_multiplication.add_assign(&E::Fr::one());
+    // for value_limb in value.into_limbs() {
+    //     let next_diff = value_limb.into_variable().mul_constant(cs, coeff)?;
+    //     value_lc = value_lc.sub(cs, &next_diff)?;
 
-    Ok(bits.into_iter().map(Boolean::from).collect())
+    //     coeff.mul_assign(&coeff_multiplication);
+    // }
+
+    // lc.enforce_equal(cs, &value_lc)?;
+
+    Ok(result)
 }
 
 pub fn field_into_allocated_bits_le_fixed<E: Engine, CS: ConstraintSystem<E>, F: PrimeField>(
