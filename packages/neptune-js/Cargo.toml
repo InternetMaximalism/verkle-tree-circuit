@@ -1,0 +1,18 @@
+[package]
+name = "neptune-js"
+version = "0.1.0"
+license = "ISC"
+edition = "2018"
+exclude = ["index.node"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+anyhow = "1.0"
+generic-array = "0.14.5"
+hex = "0.4"
+neon = { version = "0.9", default-features = false, features = ["napi-6"] }
+neptune = "5.1.0"
+num_cpus = "1"
+verkle-tree = { path = "../verkle-tree" }
