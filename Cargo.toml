@@ -4,4 +4,5 @@ members = [
     "packages/circuit",
     "packages/verkle-tree",
     "packages/neptune-js",
+    "packages/neptune-wasm",
 ]

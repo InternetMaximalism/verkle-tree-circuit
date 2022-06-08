@@ -20,5 +20,10 @@
 **/npm-debug.log
 **/obj
 **/secrets.dev.yaml
+**/target
 **/values.dev.yaml
 README.md
+packages/circuit
+packages/neptune-wasm
+packages/neptune-wasm-sample
+Cargo.toml

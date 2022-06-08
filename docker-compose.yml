@@ -2,5 +2,4 @@ version: "3.9"
 services:
   linux-builder:
     build: .
-    ports:
-      - "8000:8000"
+    tty: true
